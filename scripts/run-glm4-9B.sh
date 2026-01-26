@@ -62,7 +62,7 @@ EVAL_ARGS=(
 )
 
 PERF_ARGS=(
-   --tensor-model-parallel-size 2
+   --tensor-model-parallel-size 1
    --sequence-parallel
    --pipeline-model-parallel-size 1
    --context-parallel-size 2
@@ -121,7 +121,7 @@ MISC_ARGS=(
 
 # launch the master node of ray in container
 export MASTER_ADDR=${MASTER_ADDR:-"127.0.0.1"}
-ray start --head --node-ip-address ${MASTER_ADDR} --num-gpus 8 --disable-usage-stats --dashboard-host=0.0.0.0 --dashboard-port=8265
+ray start --head --node-ip-address ${MASTER_ADDR} --num-gpus 4 --disable-usage-stats --dashboard-host=0.0.0.0 --dashboard-port=8265
 
 # Build the runtime environment JSON with proper variable substitution
 RUNTIME_ENV_JSON="{
@@ -136,8 +136,8 @@ ray job submit --address="http://127.0.0.1:8265" \
    --runtime-env-json="${RUNTIME_ENV_JSON}" \
    -- python3 train.py \
    --actor-num-nodes 1 \
-   --actor-num-gpus-per-node 4 \
-   --rollout-num-gpus 4 \
+   --actor-num-gpus-per-node 2 \
+   --rollout-num-gpus 2 \
    ${MODEL_ARGS[@]} \
    ${CKPT_ARGS[@]} \
    ${ROLLOUT_ARGS[@]} \

@@ -104,7 +104,6 @@ WANDB_ARGS=(
 )
 
 SGLANG_ARGS=(
-   --rollout-num-gpus-per-engine 2
    --sglang-mem-fraction-static 0.7
 )
 
@@ -121,7 +120,7 @@ MISC_ARGS=(
 
 # launch the master node of ray in container
 export MASTER_ADDR=${MASTER_ADDR:-"127.0.0.1"}
-ray start --head --node-ip-address ${MASTER_ADDR} --num-gpus 8 --disable-usage-stats --dashboard-host=0.0.0.0 --dashboard-port=8265
+ray start --head --node-ip-address ${MASTER_ADDR} --num-gpus 4 --disable-usage-stats --dashboard-host=0.0.0.0 --dashboard-port=8265
 
 # Build the runtime environment JSON with proper variable substitution
 RUNTIME_ENV_JSON="{
@@ -136,8 +135,9 @@ ray job submit --address="http://127.0.0.1:8265" \
    --runtime-env-json="${RUNTIME_ENV_JSON}" \
    -- python3 train.py \
    --actor-num-nodes 1 \
-   --actor-num-gpus-per-node 8 \
-   --colocate \
+   --actor-num-gpus-per-node 2 \
+   --rollout-num-gpus 2
+   --rollout-num-gpus-per-engine 2
    ${MODEL_ARGS[@]} \
    ${CKPT_ARGS[@]} \
    ${ROLLOUT_ARGS[@]} \
