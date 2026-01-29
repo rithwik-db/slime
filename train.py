@@ -2,7 +2,7 @@ import ray
 
 from slime.ray.placement_group import create_placement_groups, create_rollout_manager, create_training_models
 from slime.utils.arguments import parse_args
-from slime.utils.logging_utils import configure_logger, init_tracking
+from slime.utils.logging_utils import configure_logger, init_tracking, finish_tracking
 from slime.utils.misc import should_run_periodic_action
 
 
@@ -93,8 +93,19 @@ def train(args):
             ray.get(rollout_manager.eval.remote(rollout_id))
 
     ray.get(rollout_manager.dispose.remote())
+    finish_tracking(args)
 
 
 if __name__ == "__main__":
     args = parse_args()
-    train(args)
+
+    # Route to appropriate entry point based on launch method
+    launch_method = getattr(args, "launch_method", "ray_job_submit")
+
+    if launch_method == "torchrun":
+        # Use SPMD-style launch
+        from slime.launcher.spmd_train import spmd_train
+        spmd_train(args)
+    else:
+        # Use existing Ray Job Submit launch
+        train(args)

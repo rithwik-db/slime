@@ -1,0 +1,132 @@
+# Compute YAML for GRPO Math Training
+# This format is compatible with MCLI/MosaicML cluster schedulers
+#
+# Usage:
+#   python -m slime.launcher.launch_grpo -f configs/compute/aroll-grpo-math.yaml
+#   # Or with MCLI:
+#   mcli run -f configs/compute/aroll-grpo-math.yaml
+
+name: aroll-grpo-math-tool-workflow
+
+image: mosaicml/dle:nightly-latest
+
+scheduling:
+  priority: high
+  resumable: false
+  preemptible: false
+  max_duration: 24
+
+compute:
+  gpus: 16
+  cluster: r5z2p2
+
+integrations:
+- integration_type: git_repo
+  git_repo: your-org/slime
+  git_branch: main
+  pip_install: -e .
+
+command: |-
+  cd slime
+  python -m slime.launcher.launch_grpo -f /mnt/config/parameters.yaml
+
+# =============================================================================
+# Training Parameters
+# =============================================================================
+# These use slime's native argument names directly.
+# See slime/utils/arguments.py for all available options.
+#
+# Common parameter name aliases (if coming from other frameworks):
+#   pretrain_model_name     -> hf_checkpoint
+#   max_gen_len             -> rollout_max_response_len
+#   max_model_len           -> rollout_max_context_len
+#   generations_per_prompt  -> n_samples_per_prompt
+#   global_train_batch_size -> global_batch_size
+#   max_duration            -> num_rollout
+#   data_path               -> prompt_data
+#   prompt_key              -> input_key
+#   response_key            -> label_key
+# =============================================================================
+
+parameters:
+  # -------------------------
+  # Model Configuration
+  # -------------------------
+  # hf_checkpoint: HuggingFace model name or local path
+  hf_checkpoint: Qwen/Qwen3-4B
+
+  # -------------------------
+  # Cluster Settings
+  # -------------------------
+  # actor_num_nodes: Number of nodes for training actors
+  actor_num_nodes: 1
+  # actor_num_gpus_per_node: GPUs per node for training (FSDP sharding)
+  actor_num_gpus_per_node: 2
+  # rollout_num_gpus: Total GPUs for vLLM/SGLang rollout inference
+  rollout_num_gpus: 2
+
+  # -------------------------
+  # Generation Settings
+  # -------------------------
+  # rollout_max_response_len: Maximum tokens to generate per response
+  rollout_max_response_len: 2048
+  # rollout_max_context_len: Maximum context length for the model
+  rollout_max_context_len: 4096
+  # n_samples_per_prompt: Number of responses to generate per prompt
+  n_samples_per_prompt: 8
+  # rollout_batch_size: Batch size for rollout generation
+  rollout_batch_size: 8
+
+  # -------------------------
+  # Training Settings
+  # -------------------------
+  # global_batch_size: Total batch size across all workers
+  global_batch_size: 64
+  # num_rollout: Number of training rollouts (iterations)
+  num_rollout: 10
+
+  # -------------------------
+  # Data Configuration
+  # -------------------------
+  # prompt_data: Path to the training data file (JSONL format)
+  prompt_data: /root/dapo-math-17k/dapo-math-17k.jsonl
+  # input_key: JSON key for the prompt/input field
+  input_key: prompt
+  # label_key: JSON key for the expected answer/label field
+  label_key: label
+  # apply_chat_template: Set to true if prompts are in chat format [{"role": "user", "content": "..."}]
+  apply_chat_template: true
+
+  # -------------------------
+  # Algorithm
+  # -------------------------
+  advantage_estimator: grpo
+  # rm_type: Reward model type for scoring (options: dapo, math, deepscaler, f1, gpqa)
+  rm_type: deepscaler
+
+  # -------------------------
+  # KL Divergence (optional)
+  # -------------------------
+  # use_kl: true           # Requires ref_load to be set
+  # kl_coef: 0.1
+  # ref_load: /path/to/reference/model
+
+  # -------------------------
+  # Checkpointing (optional)
+  # -------------------------
+  # save_interval: 100     # Requires --save path to be set
+  # save: /path/to/checkpoints
+
+  # -------------------------
+  # Evaluation (optional)
+  # -------------------------
+  # eval_interval: 50      # Requires eval_prompt_data to be set
+  # eval_prompt_data: /path/to/eval/data.jsonl
+
+  # -------------------------
+  # Logging Configuration
+  # -------------------------
+  loggers:
+    mlflow:
+      tracking_uri: databricks
+      experiment_name: /Users/rithwik.ediga@databricks.com/slime_test

@@ -1,0 +1,135 @@
+# Slime Training Configuration
+# Model: Qwen3-4B with GRPO algorithm
+#
+# Usage:
+#   python train.py --config configs/training/qwen3-4b-grpo.yaml
+#   python train.py --config configs/training/qwen3-4b-grpo.yaml --lr 1e-7  # Override
+
+parameters:
+  # Global settings with variable interpolation
+  seed: 1234
+  pretrain_model_name: /root/Qwen3-4B
+  max_gen_len: 8192
+  max_model_len: 10240
+
+  # Cluster settings
+  cluster:
+    actor_num_nodes: 1
+    actor_num_gpus_per_node: 2
+    rollout_num_gpus: 2
+    rollout_num_gpus_per_engine: 1
+    colocate: false
+
+  # Checkpoint settings
+  checkpoint:
+    hf_checkpoint: ${pretrain_model_name}
+    ref_load: ${pretrain_model_name}_torch_dist
+    load: ${pretrain_model_name}_slime/
+    save: ${pretrain_model_name}_slime/
+    save_interval: 20
+
+  # Training backend
+  train:
+    backend: megatron
+    num_rollout: 3000
+    env_vars:
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+
+  # Rollout settings
+  rollout:
+    prompt_data: /root/dapo-math-17k/dapo-math-17k.jsonl
+    input_key: prompt
+    label_key: label
+    apply_chat_template: true
+    shuffle: true
+    temperature: 1.0
+    max_response_len: ${max_gen_len}
+    max_context_len: ${max_model_len}
+    batch_size: 32
+    n_samples_per_prompt: 8
+
+  # Data settings
+  data:
+    global_batch_size: 256
+    balance_data: true
+    use_dynamic_batch_size: true
+    max_tokens_per_gpu: 9216
+    seed: ${seed}
+
+  # Algorithm (GRPO)
+  algorithm:
+    advantage_estimator: grpo
+    eps_clip: 0.2
+    eps_clip_high: 0.28
+    use_kl_loss: true
+    kl_loss_coef: 0.0
+    kl_loss_type: low_var_kl
+    entropy_coef: 0.0
+
+  # Optimizer
+  optimizer:
+    name: adam
+    lr: 1e-6
+    lr_decay_style: constant
+    weight_decay: 0.1
+    adam_beta1: 0.9
+    adam_beta2: 0.98
+
+  # Evaluation
+  eval:
+    interval: 20
+    prompt_data: /root/aime-2024/aime-2024.jsonl
+    n_samples_per_eval_prompt: 16
+    max_response_len: 16384
+    top_p: 1.0
+
+  # Reward model
+  reward:
+    rm_type: deepscaler
+
+  # SGLang settings
+  sglang:
+    mem_fraction_static: 0.7
+
+  # Logging - all disabled by default
+  logging:
+    wandb:
+      enabled: false
+    tensorboard:
+      enabled: false
+    mlflow:
+      enabled: false
+      # tracking_uri: databricks
+      # experiment_name: test_experiment
+
+  # Model architecture (Qwen3-4B)
+  model:
+    swiglu: true
+    num_layers: 36
+    hidden_size: 2560
+    ffn_hidden_size: 9728
+    num_attention_heads: 32
+    group_query_attention: true
+    num_query_groups: 8
+    use_rotary_position_embeddings: true
+    disable_bias_linear: true
+    normalization: RMSNorm
+    norm_epsilon: 1e-6
+    rotary_base: 1000000
+    vocab_size: 151936
+    kv_channels: 128
+    qk_layernorm: true
+
+  # Megatron-specific settings
+  megatron:
+    tensor_model_parallel_size: 2
+    pipeline_model_parallel_size: 1
+    sequence_parallel: true
+    recompute_granularity: full
+    recompute_method: uniform
+    recompute_num_layers: 1
+
+  # Launcher settings
+  launcher:
+    method: ray_job_submit  # or "torchrun"
+    spmd_ray_timeout: 300

@@ -2,7 +2,8 @@ import argparse
 import json
 import logging
 import os
-from typing import Any
+import sys
+from typing import Any, Dict, Optional, Set
 
 import yaml
 from sglang_router.launch_router import RouterArgs
@@ -14,6 +15,67 @@ from slime.utils.eval_config import EvalDatasetConfig, build_eval_dataset_config
 from slime.utils.logging_utils import configure_logger
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_config_path_from_argv(argv=None) -> Optional[str]:
+    """
+    Extract --config path from command line arguments early, before full parsing.
+
+    This allows loading YAML defaults before the main argument parser runs.
+    """
+    if argv is None:
+        argv = sys.argv[1:]
+
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--config" and i + 1 < len(argv):
+            return argv[i + 1]
+        elif arg.startswith("--config="):
+            return arg.split("=", 1)[1]
+        i += 1
+    return None
+
+
+def _extract_explicit_args(argv=None) -> Set[str]:
+    """
+    Extract which arguments were explicitly provided on command line.
+
+    This is used to ensure CLI args take precedence over YAML defaults.
+    """
+    if argv is None:
+        argv = sys.argv[1:]
+
+    explicit = set()
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg.startswith("--"):
+            # Extract argument name (handle --key=value and --key value formats)
+            arg_name = arg[2:].split("=")[0].replace("-", "_")
+            explicit.add(arg_name)
+        i += 1
+    return explicit
+
+
+def _load_yaml_defaults(config_path: str) -> Dict[str, Any]:
+    """
+    Load YAML config and return flattened dict for argparse defaults.
+
+    Uses the new config module if available, falls back to basic YAML loading.
+    """
+    try:
+        from slime.config.loader import load_yaml_as_dict
+        return load_yaml_as_dict(config_path)
+    except ImportError:
+        # Fallback to basic YAML loading if config module not available
+        logger.warning("slime.config module not available, using basic YAML loading")
+        with open(config_path) as f:
+            data = yaml.safe_load(f) or {}
+        # Handle nested 'parameters:' key
+        if "parameters" in data:
+            data = data["parameters"]
+        return data
 
 
 def reset_arg(parser, name, **kwargs):
@@ -34,6 +96,8 @@ def reset_arg(parser, name, **kwargs):
 
 def get_slime_extra_args_provider(add_custom_arguments=None):
     def add_slime_arguments(parser):
+        # Note: --config is already defined in fsdp_utils/arguments.py
+
         # Ray
         def add_cluster_arguments(parser):
             parser.add_argument("--actor-num-nodes", type=int, default=1, help="Number of nodes for training actor")
@@ -45,6 +109,23 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
             )
             parser.add_argument(
                 "--critic-num-gpus-per-node", type=int, default=None, help="Number of gpus per node for training actor"
+            )
+
+            # Launch method arguments
+            parser.add_argument(
+                "--launch-method",
+                type=str,
+                default="ray_job_submit",
+                choices=["ray_job_submit", "torchrun"],
+                help="Launch method: 'ray_job_submit' (default) uses Ray Job Submit, "
+                     "'torchrun' uses SPMD-style launch with torch.distributed.",
+            )
+            parser.add_argument(
+                "--spmd-ray-timeout",
+                type=int,
+                default=300,
+                help="Timeout in seconds for GPU availability when using torchrun launch. "
+                     "Only applies when --launch-method=torchrun.",
             )
 
             parser.add_argument(
@@ -1042,6 +1123,57 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
 
             return parser
 
+        # mlflow
+        def add_mlflow_arguments(parser):
+            """Add MLflow-related arguments to parser."""
+            parser.add_argument(
+                "--use-mlflow",
+                action="store_true",
+                default=False,
+                help="Enable MLflow logging.",
+            )
+            parser.add_argument(
+                "--mlflow-tracking-uri",
+                type=str,
+                default=None,
+                help=(
+                    "MLflow tracking URI. Use 'databricks' for Databricks MLflow, "
+                    "or a path/URL for other backends. Defaults to MLFLOW_TRACKING_URI env var."
+                ),
+            )
+            parser.add_argument(
+                "--mlflow-experiment-name",
+                type=str,
+                default=None,
+                help="MLflow experiment name. Required when using --use-mlflow.",
+            )
+            parser.add_argument(
+                "--mlflow-run-name",
+                type=str,
+                default=None,
+                help="MLflow run name. If not specified, uses --mlflow-group with random suffix.",
+            )
+            parser.add_argument(
+                "--mlflow-group",
+                type=str,
+                default=None,
+                help="Group tag for MLflow run, similar to --wandb-group.",
+            )
+            parser.add_argument(
+                "--mlflow-tags",
+                type=json.loads,
+                default=None,
+                help='Additional tags as JSON dict, e.g., \'{"env": "prod"}\'',
+            )
+            parser.add_argument(
+                "--mlflow-run-id",
+                type=str,
+                default=None,
+                help="Existing MLflow run ID to resume (internal use for distributed training).",
+            )
+
+            return parser
+
         # debug
         def add_debug_arguments(parser):
             parser.add_argument(
@@ -1370,6 +1502,7 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
         parser = add_algo_arguments(parser)
         parser = add_wandb_arguments(parser)
         parser = add_tensorboard_arguments(parser)
+        parser = add_mlflow_arguments(parser)
         parser = add_router_arguments(parser)
         parser = add_debug_arguments(parser)
         parser = add_sglang_arguments(parser)
@@ -1399,6 +1532,19 @@ def parse_args(add_custom_arguments=None):
     # Users may call `parse_args` very early, thus we ensure logger is configured here
     configure_logger()
 
+    # NEW: Early extraction of --config path for YAML config loading
+    config_path = _extract_config_path_from_argv()
+    yaml_defaults = {}
+    if config_path:
+        try:
+            yaml_defaults = _load_yaml_defaults(config_path)
+            logger.info(f"Loaded YAML config from {config_path}")
+        except Exception as e:
+            logger.warning(f"Failed to load config from {config_path}: {e}")
+
+    # Track which args were explicitly provided on CLI
+    explicit_args = _extract_explicit_args()
+
     add_slime_arguments = get_slime_extra_args_provider(add_custom_arguments)
 
     backend = parse_args_train_backend()
@@ -1425,6 +1571,23 @@ def parse_args(add_custom_arguments=None):
         args = load_fsdp_args(extra_args_provider=add_slime_arguments)
         args.rank = 0  # Primary process rank for wandb initialization
         args.world_size = args.actor_num_nodes * args.actor_num_gpus_per_node
+
+    # NEW: Apply YAML defaults for arguments not explicitly set via CLI
+    if yaml_defaults:
+        try:
+            from slime.config.converter import apply_yaml_defaults_to_namespace
+            args = apply_yaml_defaults_to_namespace(args, yaml_defaults, explicit_args)
+        except ImportError:
+            # Fallback if config module not available
+            for key, value in yaml_defaults.items():
+                argparse_key = key.replace("-", "_")
+                if argparse_key not in explicit_args and hasattr(args, argparse_key):
+                    current = getattr(args, argparse_key)
+                    if current is None:
+                        setattr(args, argparse_key, value)
+
+    # Store config path in args for reference
+    args.config = config_path
 
     slime_validate_args(args)
 
