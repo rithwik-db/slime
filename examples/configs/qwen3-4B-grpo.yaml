@@ -14,6 +14,7 @@
 cluster:
   actor_num_nodes: 1
   actor_num_gpus_per_node: 2
+  rollout_num_gpus: 2  # Required: total GPUs for rollout
   rollout_num_gpus_per_engine: 2
   colocate: false
   # offload_train: true  # Automatically set when colocate=true
@@ -61,7 +62,6 @@ data:
 
   # Training iterations
   num_rollout: 256
-  rollout_batch_size: 8
   # num_epoch: 3  # Alternative: use epochs instead of num_rollout
 
 # =============================================================================
@@ -134,60 +134,3 @@ tensorboard:
 # =============================================================================
 sglang:
   sglang_mem_fraction_static: 0.7
-
-# =============================================================================
-# Megatron Model Architecture (COMMENTED OUT - using FSDP backend)
-# These settings are only needed for Megatron backend.
-# With FSDP, model architecture is loaded from the HuggingFace checkpoint.
-# =============================================================================
-
-# # Model architecture
-# num_layers: 36
-# hidden_size: 2560
-# ffn_hidden_size: 9728
-# num_attention_heads: 32
-# group_query_attention: true
-# num_query_groups: 8
-# kv_channels: 128
-
-# # Normalization
-# normalization: RMSNorm
-# norm_epsilon: 1.0e-6
-
-# # Position embeddings
-# use_rotary_position_embeddings: true
-# rotary_base: 1000000
-
-# # Activation
-# swiglu: true
-# disable_bias_linear: true
-
-# # Vocabulary
-# vocab_size: 151936
-# padded_vocab_size: 152064
-
-# # Parallelism (Megatron-specific)
-# tensor_model_parallel_size: 2
-# pipeline_model_parallel_size: 1
-# context_parallel_size: 1
-# sequence_parallel: true
-
-# # Recomputation (Megatron-specific)
-# recompute_granularity: full
-# recompute_method: uniform
-# recompute_num_layers: 1
-
-# # Precision
-# bf16: true
-# attention_softmax_in_fp32: true
-# accumulate_allreduce_grads_in_fp32: true
-
-# # Optimizer (Megatron-specific)
-# lr_decay_style: constant
-# weight_decay: 0.1
-# adam_beta1: 0.9
-# adam_beta2: 0.98
-
-# # Attention (Megatron-specific)
-# attention_backend: flash
-# qk_layernorm: true

@@ -22,7 +22,6 @@ from slime.config.models import (
     MTPConfig,
     CIConfig,
     NetworkConfig,
-    # MegatronPluginsConfig,  # DISABLED - Megatron backend not supported
 )
 from slime.config.loader import load_config, load_yaml_config, config_to_namespace
 
@@ -47,7 +46,6 @@ __all__ = [
     "MTPConfig",
     "CIConfig",
     "NetworkConfig",
-    # "MegatronPluginsConfig",  # DISABLED - Megatron backend not supported
     # Loader functions
     "load_config",
     "load_yaml_config",

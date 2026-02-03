@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import os
+import sys
 from typing import Any
 
 import yaml
@@ -113,9 +114,9 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
             parser.add_argument(
                 "--train-backend",
                 type=str,
-                choices=["megatron", "fsdp"],
-                default="megatron",
-                help="The backend for training.",
+                choices=["fsdp"],  # Only FSDP is supported (Megatron backend disabled)
+                default="fsdp",
+                help="The backend for training. Only FSDP is supported.",
             )
             parser.add_argument(
                 "--qkv-format",
@@ -588,7 +589,7 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
             parser.add_argument(
                 "--rollout-batch-size",
                 type=int,
-                required=True,
+                default=None,
                 help=(
                     "The number of prompts in each rollout step. "
                     "The total data returned should be rollout_batch_size * n_samples_per_prompt. "
@@ -972,7 +973,7 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
                 "--slime-router-middleware-paths",
                 type=str,
                 nargs="+",
-                default="",
+                default=None,
             )
             parser.add_argument(
                 "--slime-router-timeout",
@@ -1434,6 +1435,23 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
     return add_slime_arguments
 
 
+def _filter_train_yaml_from_argv(argv: list[str]) -> list[str]:
+    """Remove --train-yaml argument from argv list."""
+    filtered = []
+    skip_next = False
+    for arg in argv:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg == "--train-yaml":
+            skip_next = True
+            continue
+        if arg.startswith("--train-yaml="):
+            continue
+        filtered.append(arg)
+    return filtered
+
+
 def _parse_args_from_yaml(yaml_path: str, add_custom_arguments=None):
     """
     Parse arguments from a YAML config file with CLI overrides.
@@ -1448,22 +1466,17 @@ def _parse_args_from_yaml(yaml_path: str, add_custom_arguments=None):
 
     logger.info(f"Loading configuration from YAML: {yaml_path}")
 
-    # First, parse CLI args to get any overrides
+    # Filter out --train-yaml from argv and pass directly to FSDP parser
+    filtered_argv = _filter_train_yaml_from_argv(sys.argv[1:])
+
+    # Parse CLI args to get any overrides
     add_slime_arguments = get_slime_extra_args_provider(add_custom_arguments)
-    backend = parse_args_train_backend()
 
-    # Megatron backend is not supported - raise exception
-    if backend == "megatron":
-        raise NotImplementedError(
-            "Megatron backend is not supported with YAML configuration. "
-            "Please use --train-backend fsdp in your config or CLI arguments. "
-            "Set 'train: { train_backend: fsdp }' in your YAML config file."
-        )
-
-    # FSDP backend
+    # FSDP backend (default, Megatron is disabled)
     from slime.backends.fsdp_utils.arguments import load_fsdp_args
 
-    cli_args = load_fsdp_args(extra_args_provider=add_slime_arguments)
+    cli_args = load_fsdp_args(extra_args_provider=add_slime_arguments, argv=filtered_argv)
+
     cli_overrides = namespace_to_cli_overrides(cli_args)
 
     # Load YAML config with CLI overrides
@@ -1501,13 +1514,13 @@ def parse_args(add_custom_arguments=None):
     from slime.config.loader import create_train_yaml_parser
 
     yaml_parser = create_train_yaml_parser()
-    yaml_args, remaining_argv = yaml_parser.parse_known_args()
+    yaml_args, _ = yaml_parser.parse_known_args()
 
     if yaml_args.train_yaml:
         # Use YAML-based config loading
         return _parse_args_from_yaml(yaml_args.train_yaml, add_custom_arguments)
 
-    # Legacy CLI-only path (existing behavior)
+    # Legacy path (this is CLI only, but we still want to support it for backward compatibility)
     add_slime_arguments = get_slime_extra_args_provider(add_custom_arguments)
 
     backend = parse_args_train_backend()
@@ -1546,12 +1559,19 @@ def parse_args_train_backend():
 
 def _resolve_eval_datasets(args) -> list[EvalDatasetConfig]:
     """
-    Build evaluation dataset configurations from either --eval-config or --eval-prompt-data.
+    Build evaluation dataset configurations from:
+    - args.datasets (from YAML evaluation.datasets)
+    - args.eval_config (path to OmegaConf eval config file)
+    - args.eval_prompt_data (legacy CLI arguments as name/path pairs)
     """
     datasets_config = []
     defaults: dict[str, Any] = {}
 
-    if args.eval_config:
+    # Check for datasets from YAML config (evaluation.datasets -> args.datasets)
+    if hasattr(args, "datasets") and args.datasets:
+        # datasets is already a list of dicts from YAML
+        datasets_config = ensure_dataset_list(args.datasets)
+    elif args.eval_config:
         from omegaconf import OmegaConf
 
         cfg = OmegaConf.load(args.eval_config)
@@ -1601,10 +1621,19 @@ def slime_validate_args(args):
                 "please make sure it is a valid HuggingFace checkpoint directory."
             )
 
-    # Initialize load path from ref_load or hf_checkpoint if not set
-    if args.load is None:
+    # Initialize load path and checkpoint loading flags
+    # If no valid checkpoint exists, skip loading optimizer and RNG states
+    if (
+        args.load is None
+        or not os.path.exists(args.load)
+        or not os.path.exists(os.path.join(args.load, "config.json"))
+    ):
+        args.no_load_optim = True
+        args.no_load_rng = True
         args.load = args.ref_load or args.hf_checkpoint
-    args.start_rollout_id = 0
+        args.start_rollout_id = 0
+    else:
+        args.start_rollout_id = 0
 
     if args.eval_interval is not None:
         assert args.eval_datasets, "Evaluation datasets must be configured when eval_interval is set."

@@ -87,6 +87,7 @@ else
 fi
 
 SGLANG_ARGS=(
+   --rollout-num-gpus 2
    --rollout-num-gpus-per-engine 1
    --sglang-mem-fraction-static 0.75
    --sglang-decode-log-interval 1000
@@ -109,8 +110,7 @@ PERF_ARGS=(
 
 MISC_ARGS=(
    --actor-num-nodes 1
-   --actor-num-gpus-per-node 8
-   --colocate
+   --actor-num-gpus-per-node 2
    --use-fault-tolerance
    --dump-details /root/shared_data/qwen3-4B-fsdp-1116-noref/dump_details
    # --fsdp-cpu-offload
@@ -118,7 +118,7 @@ MISC_ARGS=(
 
 # launch the master node of ray in container - 8 GPUs for training
 export MASTER_ADDR=${MASTER_ADDR:-"127.0.0.1"}
-ray start --head --node-ip-address ${MASTER_ADDR} --num-gpus 8 --disable-usage-stats
+ray start --head --node-ip-address ${MASTER_ADDR} --num-gpus 4 --disable-usage-stats
 
 
 RUNTIME_ENV_JSON="{

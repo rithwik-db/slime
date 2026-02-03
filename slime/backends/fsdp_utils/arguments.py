@@ -59,7 +59,14 @@ class FSDPArgs:
     config: str | None = None
 
 
-def parse_fsdp_cli(extra_args_provider=None):
+def parse_fsdp_cli(extra_args_provider=None, argv=None):
+    """
+    Parse FSDP CLI arguments.
+
+    Args:
+        extra_args_provider: Optional function to add extra arguments to parser
+        argv: Optional list of arguments to parse (defaults to sys.argv[1:])
+    """
     parser = argparse.ArgumentParser("FSDP SFT Training (slime)")
     parser.add_argument("--config", type=str, default=None, help="YAML config path")
     for f in dataclasses.fields(FSDPArgs):
@@ -81,12 +88,12 @@ def parse_fsdp_cli(extra_args_provider=None):
 
     if extra_args_provider is not None:
         parser = extra_args_provider(parser)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     return args
 
 
-def load_fsdp_args(extra_args_provider=None):
-    args = parse_fsdp_cli(extra_args_provider)
+def load_fsdp_args(extra_args_provider=None, argv=None):
+    args = parse_fsdp_cli(extra_args_provider, argv=argv)
     if args.config:
         with open(args.config) as f:
             data = yaml.safe_load(f) or {}

@@ -84,18 +84,6 @@ class TrainConfig(SlimeBaseConfig):
         default=None, description="Regex patterns of parameter names to FREEZE"
     )
 
-    # -------------------------------------------------------------------------
-    # Megatron-specific settings (COMMENTED OUT - Megatron backend not supported)
-    # -------------------------------------------------------------------------
-    # qkv_format: Literal["thd", "bshd"] = Field(default="thd", description="QKV layout for Megatron backend")
-    # megatron_to_hf_mode: Literal["raw", "bridge"] = Field(
-    #     default="raw", description="Method to convert megatron weights to HuggingFace format"
-    # )
-    # custom_model_provider_path: str | None = Field(default=None, description="Path to custom model provider function")
-    # recompute_loss_function: bool = Field(
-    #     default=False, description="Whether to recompute loss function to save memory"
-    # )
-
 
 # =============================================================================
 # Rollout Configuration (add_rollout_arguments)
@@ -544,22 +532,6 @@ class RolloutBufferConfig(SlimeBaseConfig):
 
 
 # =============================================================================
-# Megatron Plugins Configuration (COMMENTED OUT - Megatron backend not supported)
-# =============================================================================
-
-# class MegatronPluginsConfig(SlimeBaseConfig):
-#     """Custom Megatron plugins configuration."""
-#
-#     custom_megatron_init_path: str | None = Field(default=None, description="Path to custom Megatron init function")
-#     custom_megatron_before_log_prob_hook_path: str | None = Field(
-#         default=None, description="Path to hook before log prob computation"
-#     )
-#     custom_megatron_before_train_step_hook_path: str | None = Field(
-#         default=None, description="Path to hook before train step"
-#     )
-
-
-# =============================================================================
 # MTP Training Configuration (add_mtp_training_arguments)
 # =============================================================================
 
@@ -650,7 +622,6 @@ class SlimeConfig(SlimeBaseConfig):
     network: NetworkConfig = Field(default_factory=NetworkConfig)
     reward: RewardConfig = Field(default_factory=RewardConfig)
     rollout_buffer: RolloutBufferConfig = Field(default_factory=RolloutBufferConfig)
-    # megatron_plugins: MegatronPluginsConfig = Field(default_factory=MegatronPluginsConfig)  # DISABLED - Megatron not supported
     mtp: MTPConfig = Field(default_factory=MTPConfig)
     prefill_decode: PrefillDecodeConfig = Field(default_factory=PrefillDecodeConfig)
     ci: CIConfig = Field(default_factory=CIConfig)
@@ -674,7 +645,7 @@ class SlimeConfig(SlimeBaseConfig):
                     if value is not None or field_name not in flat:
                         flat[field_name] = value
 
-        # Add any extra fields at root level (Megatron passthrough)
+        # Add any extra fields at root level (passthrough for unmapped args)
         extra_fields = set(self.model_dump().keys()) - set(self.model_fields.keys())
         for field_name in extra_fields:
             flat[field_name] = getattr(self, field_name)
