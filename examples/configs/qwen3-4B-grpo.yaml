@@ -119,7 +119,7 @@ debug:
 # =============================================================================
 evaluation:
   eval_interval: 100
-  n_samples_per_eval_prompt: 16
+  n_samples_per_eval_prompt: 2
   eval_max_response_len: 16384
   eval_top_p: 1.0
 
@@ -128,7 +128,7 @@ evaluation:
     - name: aime
       path: /root/aime-2024/aime-2024.jsonl
       rm_type: deepscaler
-      n_samples_per_eval_prompt: 16
+      n_samples_per_eval_prompt: 2
       input_key: prompt
       label_key: label
 

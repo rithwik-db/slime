@@ -1545,20 +1545,10 @@ def parse_args(add_custom_arguments=None):
         # Use YAML-based config loading
         return _parse_args_from_yaml(yaml_args.train_yaml, add_custom_arguments)
 
-    # Legacy path (this is CLI only, but we still want to support it for backward compatibility)
+    # Legacy CLI path (for backward compatibility)
+    # Note: Only FSDP backend is supported (Megatron disabled via choices=["fsdp"])
     add_slime_arguments = get_slime_extra_args_provider(add_custom_arguments)
 
-    backend = parse_args_train_backend()
-
-    # Megatron backend is not supported - raise exception
-    if backend == "megatron":
-        raise NotImplementedError(
-            "Megatron backend is not supported. "
-            "Please use --train-backend fsdp instead. "
-            "Example: python train.py --train-backend fsdp --hf-checkpoint /path/to/model ..."
-        )
-
-    # FSDP backend
     from slime.backends.fsdp_utils.arguments import load_fsdp_args
 
     args = load_fsdp_args(extra_args_provider=add_slime_arguments)

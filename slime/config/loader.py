@@ -197,15 +197,6 @@ def config_to_namespace(config: SlimeConfig) -> argparse.Namespace:
     return argparse.Namespace(**flat_dict)
 
 
-def namespace_to_cli_overrides(args: argparse.Namespace) -> dict[str, Any]:
-    """
-    Convert an argparse.Namespace to a flat dictionary suitable for CLI overrides.
-
-    Filters out None values and converts to the flat format expected by load_config.
-    """
-    return {k: v for k, v in vars(args).items() if v is not None}
-
-
 def create_train_yaml_parser() -> argparse.ArgumentParser:
     """Create a minimal parser that captures --train-yaml before full parsing."""
     parser = argparse.ArgumentParser(add_help=False)
