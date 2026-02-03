@@ -459,6 +459,24 @@ class TensorboardConfig(SlimeBaseConfig):
 
 
 # =============================================================================
+# MLflow Configuration (add_mlflow_arguments)
+# =============================================================================
+
+
+class MlflowConfig(SlimeBaseConfig):
+    """MLflow logging configuration."""
+
+    use_mlflow: bool = Field(default=False, description="Enable MLflow logging")
+    mlflow_tracking_uri: str | None = Field(
+        default=None,
+        description="MLflow tracking URI (defaults to 'databricks' if DATABRICKS_HOST env var is set)",
+    )
+    mlflow_experiment_name: str | None = Field(default=None, description="MLflow experiment name")
+    mlflow_run_name: str | None = Field(default=None, description="MLflow run name")
+    mlflow_run_id: str | None = Field(default=None, description="MLflow run ID for resuming")
+
+
+# =============================================================================
 # Debug Configuration (add_debug_arguments)
 # =============================================================================
 
@@ -630,6 +648,7 @@ class SlimeConfig(SlimeBaseConfig):
     router: RouterConfig = Field(default_factory=RouterConfig)
     wandb: WandbConfig = Field(default_factory=WandbConfig)
     tensorboard: TensorboardConfig = Field(default_factory=TensorboardConfig)
+    mlflow: MlflowConfig = Field(default_factory=MlflowConfig)
     debug: DebugConfig = Field(default_factory=DebugConfig)
     network: NetworkConfig = Field(default_factory=NetworkConfig)
     reward: RewardConfig = Field(default_factory=RewardConfig)

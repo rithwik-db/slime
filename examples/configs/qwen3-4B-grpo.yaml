@@ -119,7 +119,7 @@ debug:
 # =============================================================================
 evaluation:
   eval_interval: 100
-  n_samples_per_eval_prompt: 2
+  n_samples_per_eval_prompt: 1
   eval_max_response_len: 16384
   eval_top_p: 1.0
 
@@ -128,7 +128,7 @@ evaluation:
     - name: aime
       path: /root/aime-2024/aime-2024.jsonl
       rm_type: deepscaler
-      n_samples_per_eval_prompt: 2
+      n_samples_per_eval_prompt: 1
       input_key: prompt
       label_key: label
 
@@ -143,14 +143,20 @@ reward:
 # =============================================================================
 # Logging Configuration
 # =============================================================================
-wandb:
-  use_wandb: false
-  wandb_project: slime-qwen3-grpo
-  wandb_group: experiments
-  log_passrate: true
+# wandb:
+#   use_wandb: false
+#   wandb_project: slime-qwen3-grpo
+#   wandb_group: experiments
+#   log_passrate: true
 
-tensorboard:
-  use_tensorboard: false
+# tensorboard:
+#   use_tensorboard: false
+
+mlflow:
+  use_mlflow: true
+  mlflow_tracking_uri: databricks
+  mlflow_experiment_name: /Users/rithwik.ediga@databricks.com/slime-experiments
+  mlflow_run_name: qwen3-4B-grpo-base-run
 
 # =============================================================================
 # SGLang Configuration
