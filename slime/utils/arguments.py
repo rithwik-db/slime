@@ -1109,6 +1109,26 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
             parser.add_argument("--mlflow-run-id", type=str, default=None)
             return parser
 
+        # rayless
+        def add_rayless_arguments(parser):
+            """Add arguments for rayless/SPMD-style initialization."""
+            parser.add_argument(
+                "--use-rayless-init",
+                action="store_true",
+                default=False,
+                help=(
+                    "Use rayless (torchrun/SPMD) initialization. "
+                    "Expects WORLD_SIZE, RANK, LOCAL_RANK, LOCAL_WORLD_SIZE, MASTER_ADDR, MASTER_PORT env vars."
+                ),
+            )
+            parser.add_argument(
+                "--ray-init-timeout",
+                type=int,
+                default=300,
+                help="Timeout in seconds for Ray cluster initialization via torch.distributed",
+            )
+            return parser
+
         # debug
         def add_debug_arguments(parser):
             parser.add_argument(
@@ -1429,6 +1449,7 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
             parser = add_custom_arguments(parser)
 
         parser = add_cluster_arguments(parser)
+        parser = add_rayless_arguments(parser)
         parser = add_train_arguments(parser)
         parser = add_rollout_arguments(parser)
         parser = add_fault_tolerance_arguments(parser)
