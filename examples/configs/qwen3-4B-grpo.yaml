@@ -13,9 +13,9 @@
 # =============================================================================
 cluster:
   actor_num_nodes: 1
-  actor_num_gpus_per_node: 8
+  actor_num_gpus_per_node: 2
   rollout_num_gpus_per_engine: 2
-  colocate: true
+  colocate: false
   # offload_train: true  # Automatically set when colocate=true
   # offload_rollout: true
 
@@ -31,7 +31,7 @@ train:
 # Rollout (Inference) Configuration
 # =============================================================================
 rollout:
-  hf_checkpoint: /path/to/Qwen3-4B
+  hf_checkpoint: /root/Qwen3-4B/
   rollout_temperature: 1.0
   rollout_top_p: 1.0
   rollout_max_response_len: 8192
@@ -43,9 +43,9 @@ rollout:
 # Data Configuration
 # =============================================================================
 data:
-  prompt_data: /path/to/training_data.jsonl
+  prompt_data: /root/dapo-math-17k/dapo-math-17k.jsonl
   input_key: prompt
-  label_key: answer
+  label_key: label
   apply_chat_template: true
 
   # Batch sizes
@@ -60,7 +60,8 @@ data:
   max_tokens_per_gpu: 9216
 
   # Training iterations
-  num_rollout: 3000
+  num_rollout: 256
+  rollout_batch_size: 8
   # num_epoch: 3  # Alternative: use epochs instead of num_rollout
 
 # =============================================================================
@@ -68,9 +69,9 @@ data:
 # =============================================================================
 algorithm:
   # Checkpoints
-  ref_load: /path/to/Qwen3-4B_torch_dist
-  load: /path/to/checkpoints/
-  save: /path/to/checkpoints/
+  ref_load: /root/Qwen3-4B/
+  load: /root/Qwen3-4B/
+  save: /root/Qwen3-4B-checkpoints/
   save_interval: 100
 
   # GRPO settings
@@ -79,7 +80,7 @@ algorithm:
   rewards_normalization: true
 
   # KL divergence
-  use_kl_loss: true
+  use_kl_loss: false
   kl_loss_coef: 0.0
   kl_loss_type: low_var_kl
 
@@ -104,14 +105,9 @@ evaluation:
   # Evaluation datasets
   datasets:
     - name: aime
-      path: /path/to/aime.jsonl
+      path: /root/aime-2024/aime-2024.jsonl
       rm_type: deepscaler
       n_samples_per_eval_prompt: 16
-
-    - name: math500
-      path: /path/to/math500.jsonl
-      rm_type: math
-      n_samples_per_eval_prompt: 8
 
 # =============================================================================
 # Reward Model Configuration
@@ -125,7 +121,7 @@ reward:
 # Logging Configuration
 # =============================================================================
 wandb:
-  use_wandb: true
+  use_wandb: false
   wandb_project: slime-qwen3-grpo
   wandb_group: experiments
   log_passrate: true

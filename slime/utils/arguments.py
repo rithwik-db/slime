@@ -1594,30 +1594,17 @@ def slime_validate_args(args):
         if not os.path.exists(args.ref_load):
             raise FileNotFoundError(f"ref_load {args.ref_load} does not exist, please check the path.")
 
-        if not os.path.exists(os.path.join(args.ref_load, "latest_checkpointed_iteration.txt")):
-            logger.info(
-                f"ref_load {args.ref_load} does not have latest_checkpointed_iteration.txt, "
-                "please make sure it is a valid megatron checkpoint directory."
+        # Validate HuggingFace checkpoint format (FSDP backend)
+        if not os.path.exists(os.path.join(args.ref_load, "config.json")):
+            logger.warning(
+                f"ref_load {args.ref_load} does not have config.json, "
+                "please make sure it is a valid HuggingFace checkpoint directory."
             )
 
-    # TODO: During loading, we need to set the start_rollout_id here.
-    if args.megatron_to_hf_mode == "bridge":
-        if args.load is None:
-            args.load = args.ref_load or args.hf_checkpoint
-        args.start_rollout_id = 0
-    else:
-        if (
-            args.load is None
-            or not os.path.exists(args.load)
-            or not os.path.exists(os.path.join(args.load, "latest_checkpointed_iteration.txt"))
-        ):
-            args.no_load_optim = True
-            args.no_load_rng = True
-            args.finetune = True
-            args.load = args.ref_load
-            if args.ref_ckpt_step is not None:
-                args.ckpt_step = args.ref_ckpt_step
-            args.start_rollout_id = 0
+    # Initialize load path from ref_load or hf_checkpoint if not set
+    if args.load is None:
+        args.load = args.ref_load or args.hf_checkpoint
+    args.start_rollout_id = 0
 
     if args.eval_interval is not None:
         assert args.eval_datasets, "Evaluation datasets must be configured when eval_interval is set."
