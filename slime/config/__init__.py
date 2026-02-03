@@ -1,4 +1,7 @@
-"""Slime configuration system with Pydantic models and YAML support."""
+"""Slime configuration system with Pydantic models and YAML support.
+
+Note: Only FSDP backend is supported. Megatron backend has been disabled.
+"""
 
 from slime.config.models import (
     SlimeConfig,
@@ -19,7 +22,7 @@ from slime.config.models import (
     MTPConfig,
     CIConfig,
     NetworkConfig,
-    MegatronPluginsConfig,
+    # MegatronPluginsConfig,  # DISABLED - Megatron backend not supported
 )
 from slime.config.loader import load_config, load_yaml_config, config_to_namespace
 
@@ -44,7 +47,7 @@ __all__ = [
     "MTPConfig",
     "CIConfig",
     "NetworkConfig",
-    "MegatronPluginsConfig",
+    # "MegatronPluginsConfig",  # DISABLED - Megatron backend not supported
     # Loader functions
     "load_config",
     "load_yaml_config",

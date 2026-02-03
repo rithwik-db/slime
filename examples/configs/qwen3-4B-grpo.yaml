@@ -1,5 +1,6 @@
 # Example Slime Training Configuration
 # Qwen3-4B with GRPO (Group Relative Policy Optimization)
+# Using FSDP Backend
 #
 # Usage:
 #   python train.py --train-yaml examples/configs/qwen3-4B-grpo.yaml
@@ -22,9 +23,9 @@ cluster:
 # Training Backend Configuration
 # =============================================================================
 train:
-  train_backend: megatron
-  qkv_format: thd
+  train_backend: fsdp  # Only FSDP is supported (Megatron backend disabled)
   # train_memory_margin_bytes: 1073741824  # 1GB default
+  # qkv_format: thd  # Megatron-only setting, not used with FSDP
 
 # =============================================================================
 # Rollout (Inference) Configuration
@@ -139,57 +140,58 @@ sglang:
   sglang_mem_fraction_static: 0.7
 
 # =============================================================================
-# Megatron Model Architecture (passthrough args)
-# These are passed directly to Megatron and should match your model
+# Megatron Model Architecture (COMMENTED OUT - using FSDP backend)
+# These settings are only needed for Megatron backend.
+# With FSDP, model architecture is loaded from the HuggingFace checkpoint.
 # =============================================================================
 
-# Model architecture
-num_layers: 36
-hidden_size: 2560
-ffn_hidden_size: 9728
-num_attention_heads: 32
-group_query_attention: true
-num_query_groups: 8
-kv_channels: 128
+# # Model architecture
+# num_layers: 36
+# hidden_size: 2560
+# ffn_hidden_size: 9728
+# num_attention_heads: 32
+# group_query_attention: true
+# num_query_groups: 8
+# kv_channels: 128
 
-# Normalization
-normalization: RMSNorm
-norm_epsilon: 1.0e-6
+# # Normalization
+# normalization: RMSNorm
+# norm_epsilon: 1.0e-6
 
-# Position embeddings
-use_rotary_position_embeddings: true
-rotary_base: 1000000
+# # Position embeddings
+# use_rotary_position_embeddings: true
+# rotary_base: 1000000
 
-# Activation
-swiglu: true
-disable_bias_linear: true
+# # Activation
+# swiglu: true
+# disable_bias_linear: true
 
-# Vocabulary
-vocab_size: 151936
-padded_vocab_size: 152064
+# # Vocabulary
+# vocab_size: 151936
+# padded_vocab_size: 152064
 
-# Parallelism
-tensor_model_parallel_size: 2
-pipeline_model_parallel_size: 1
-context_parallel_size: 1
-sequence_parallel: true
+# # Parallelism (Megatron-specific)
+# tensor_model_parallel_size: 2
+# pipeline_model_parallel_size: 1
+# context_parallel_size: 1
+# sequence_parallel: true
 
-# Recomputation
-recompute_granularity: full
-recompute_method: uniform
-recompute_num_layers: 1
+# # Recomputation (Megatron-specific)
+# recompute_granularity: full
+# recompute_method: uniform
+# recompute_num_layers: 1
 
-# Precision
-bf16: true
-attention_softmax_in_fp32: true
-accumulate_allreduce_grads_in_fp32: true
+# # Precision
+# bf16: true
+# attention_softmax_in_fp32: true
+# accumulate_allreduce_grads_in_fp32: true
 
-# Optimizer
-lr_decay_style: constant
-weight_decay: 0.1
-adam_beta1: 0.9
-adam_beta2: 0.98
+# # Optimizer (Megatron-specific)
+# lr_decay_style: constant
+# weight_decay: 0.1
+# adam_beta1: 0.9
+# adam_beta2: 0.98
 
-# Attention
-attention_backend: flash
-qk_layernorm: true
+# # Attention (Megatron-specific)
+# attention_backend: flash
+# qk_layernorm: true

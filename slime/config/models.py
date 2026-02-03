@@ -67,8 +67,7 @@ class ClusterConfig(SlimeBaseConfig):
 class TrainConfig(SlimeBaseConfig):
     """Training backend and format configuration."""
 
-    train_backend: Literal["megatron", "fsdp"] = Field(default="megatron", description="Backend for training")
-    qkv_format: Literal["thd", "bshd"] = Field(default="thd", description="QKV layout for Megatron backend")
+    train_backend: Literal["fsdp"] = Field(default="fsdp", description="Backend for training (only FSDP supported)")
     true_on_policy_mode: bool = Field(default=False, description="Whether to enable true-on-policy mode")
     train_env_vars: dict[str, Any] = Field(
         default_factory=dict, description="Extra environment variables for training process"
@@ -77,13 +76,6 @@ class TrainConfig(SlimeBaseConfig):
         default=1024**3, description="Margin for train memory allocation (default 1GB)"
     )
     enable_weights_backuper: bool = Field(default=True, description="Whether to enable weights backuper")
-    megatron_to_hf_mode: Literal["raw", "bridge"] = Field(
-        default="raw", description="Method to convert megatron weights to HuggingFace format"
-    )
-    custom_model_provider_path: str | None = Field(default=None, description="Path to custom model provider function")
-    recompute_loss_function: bool = Field(
-        default=False, description="Whether to recompute loss function to save memory"
-    )
     log_probs_chunk_size: int = Field(default=-1, description="Chunk size to compute log probs to save memory")
     only_train_params_name_list: list[str] | None = Field(
         default=None, description="Regex patterns of parameter names to TRAIN (others frozen)"
@@ -91,6 +83,18 @@ class TrainConfig(SlimeBaseConfig):
     freeze_params_name_list: list[str] | None = Field(
         default=None, description="Regex patterns of parameter names to FREEZE"
     )
+
+    # -------------------------------------------------------------------------
+    # Megatron-specific settings (COMMENTED OUT - Megatron backend not supported)
+    # -------------------------------------------------------------------------
+    # qkv_format: Literal["thd", "bshd"] = Field(default="thd", description="QKV layout for Megatron backend")
+    # megatron_to_hf_mode: Literal["raw", "bridge"] = Field(
+    #     default="raw", description="Method to convert megatron weights to HuggingFace format"
+    # )
+    # custom_model_provider_path: str | None = Field(default=None, description="Path to custom model provider function")
+    # recompute_loss_function: bool = Field(
+    #     default=False, description="Whether to recompute loss function to save memory"
+    # )
 
 
 # =============================================================================
@@ -540,20 +544,19 @@ class RolloutBufferConfig(SlimeBaseConfig):
 
 
 # =============================================================================
-# Megatron Plugins Configuration (add_custom_megatron_plugins_arguments)
+# Megatron Plugins Configuration (COMMENTED OUT - Megatron backend not supported)
 # =============================================================================
 
-
-class MegatronPluginsConfig(SlimeBaseConfig):
-    """Custom Megatron plugins configuration."""
-
-    custom_megatron_init_path: str | None = Field(default=None, description="Path to custom Megatron init function")
-    custom_megatron_before_log_prob_hook_path: str | None = Field(
-        default=None, description="Path to hook before log prob computation"
-    )
-    custom_megatron_before_train_step_hook_path: str | None = Field(
-        default=None, description="Path to hook before train step"
-    )
+# class MegatronPluginsConfig(SlimeBaseConfig):
+#     """Custom Megatron plugins configuration."""
+#
+#     custom_megatron_init_path: str | None = Field(default=None, description="Path to custom Megatron init function")
+#     custom_megatron_before_log_prob_hook_path: str | None = Field(
+#         default=None, description="Path to hook before log prob computation"
+#     )
+#     custom_megatron_before_train_step_hook_path: str | None = Field(
+#         default=None, description="Path to hook before train step"
+#     )
 
 
 # =============================================================================
@@ -626,10 +629,12 @@ class SlimeConfig(SlimeBaseConfig):
     Root configuration for Slime training.
 
     This combines all section configs into a single validated configuration object.
-    Extra fields at the root level are allowed for Megatron passthrough arguments.
+    Extra fields at the root level are allowed for additional passthrough arguments.
+
+    Note: Only FSDP backend is supported. Megatron backend has been disabled.
     """
 
-    model_config = ConfigDict(extra="allow")  # Allow Megatron/unknown args at root
+    model_config = ConfigDict(extra="allow")  # Allow unknown args at root
 
     cluster: ClusterConfig = Field(default_factory=ClusterConfig)
     train: TrainConfig = Field(default_factory=TrainConfig)
@@ -645,7 +650,7 @@ class SlimeConfig(SlimeBaseConfig):
     network: NetworkConfig = Field(default_factory=NetworkConfig)
     reward: RewardConfig = Field(default_factory=RewardConfig)
     rollout_buffer: RolloutBufferConfig = Field(default_factory=RolloutBufferConfig)
-    megatron_plugins: MegatronPluginsConfig = Field(default_factory=MegatronPluginsConfig)
+    # megatron_plugins: MegatronPluginsConfig = Field(default_factory=MegatronPluginsConfig)  # DISABLED - Megatron not supported
     mtp: MTPConfig = Field(default_factory=MTPConfig)
     prefill_decode: PrefillDecodeConfig = Field(default_factory=PrefillDecodeConfig)
     ci: CIConfig = Field(default_factory=CIConfig)

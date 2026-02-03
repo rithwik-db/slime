@@ -1441,6 +1441,8 @@ def _parse_args_from_yaml(yaml_path: str, add_custom_arguments=None):
     This function loads the config from YAML, parses remaining CLI args,
     merges them (CLI takes precedence), and returns a namespace compatible
     with the existing codebase.
+
+    Note: Only FSDP backend is supported. Megatron backend has been disabled.
     """
     from slime.config.loader import load_config, config_to_namespace, namespace_to_cli_overrides
 
@@ -1450,22 +1452,19 @@ def _parse_args_from_yaml(yaml_path: str, add_custom_arguments=None):
     add_slime_arguments = get_slime_extra_args_provider(add_custom_arguments)
     backend = parse_args_train_backend()
 
+    # Megatron backend is not supported - raise exception
     if backend == "megatron":
-        from slime.backends.megatron_utils.arguments import parse_args as megatron_parse_args
-        from slime.backends.megatron_utils.arguments import set_default_megatron_args
-        from slime.backends.megatron_utils.arguments import validate_args as megatron_validate_args
-
-        # Parse CLI args (these will be used as overrides)
-        cli_args = megatron_parse_args(extra_args_provider=add_slime_arguments)
-        cli_overrides = namespace_to_cli_overrides(cli_args)
-    else:
-        logger.warning(
-            "🚧 🚧 🚧 FSDP backend is being rewritten, please use Megatron backend for better stability. 🚧 🚧 🚧"
+        raise NotImplementedError(
+            "Megatron backend is not supported with YAML configuration. "
+            "Please use --train-backend fsdp in your config or CLI arguments. "
+            "Set 'train: { train_backend: fsdp }' in your YAML config file."
         )
-        from slime.backends.fsdp_utils.arguments import load_fsdp_args
 
-        cli_args = load_fsdp_args(extra_args_provider=add_slime_arguments)
-        cli_overrides = namespace_to_cli_overrides(cli_args)
+    # FSDP backend
+    from slime.backends.fsdp_utils.arguments import load_fsdp_args
+
+    cli_args = load_fsdp_args(extra_args_provider=add_slime_arguments)
+    cli_overrides = namespace_to_cli_overrides(cli_args)
 
     # Load YAML config with CLI overrides
     config = load_config(yaml_path=yaml_path, cli_overrides=cli_overrides)
@@ -1477,44 +1476,16 @@ def _parse_args_from_yaml(yaml_path: str, add_custom_arguments=None):
     args._slime_config = config
 
     # Copy over any additional attributes from CLI args that aren't in the config
-    # (e.g., Megatron-specific args that weren't mapped)
     for key, value in vars(cli_args).items():
         if not hasattr(args, key):
             setattr(args, key, value)
 
-    # Apply backend-specific defaults and setup
-    if backend == "megatron":
-        if args.hf_checkpoint and not getattr(args, "debug_rollout_only", False):
-            hf_config = AutoConfig.from_pretrained(args.hf_checkpoint, trust_remote_code=True)
-            hf_validate_args(args, hf_config)
-
-        args.rank = 0
-        args.world_size = args.actor_num_nodes * args.actor_num_gpus_per_node
-        args = set_default_megatron_args(args)
-    else:
-        args.rank = 0
-        args.world_size = args.actor_num_nodes * args.actor_num_gpus_per_node
+    # Apply FSDP backend setup
+    args.rank = 0
+    args.world_size = args.actor_num_nodes * args.actor_num_gpus_per_node
 
     # Run validation
     slime_validate_args(args)
-
-    if backend == "megatron":
-        megatron_validate_args(args)
-
-        # always use varlen
-        args.variable_seq_lengths = True
-        if getattr(args, "moe_token_dispatcher_type", None) == "allgather":
-            logger.info(
-                "--moe-token-dispatcher-type allgather does not support variable sequence length, "
-                "please use alltoall dispatcher instead."
-            )
-            args.moe_token_dispatcher_type = "alltoall"
-
-        if args.pipeline_model_parallel_size == 1:
-            assert args.decoder_first_pipeline_num_layers is None and args.decoder_last_pipeline_num_layers is None, (
-                "decoder_first_pipeline_num_layers and decoder_last_pipeline_num_layers should be None when "
-                "pipeline_model_parallel_size is 1."
-            )
 
     sglang_validate_args(args)
 
@@ -1540,49 +1511,23 @@ def parse_args(add_custom_arguments=None):
     add_slime_arguments = get_slime_extra_args_provider(add_custom_arguments)
 
     backend = parse_args_train_backend()
+
+    # Megatron backend is not supported - raise exception
     if backend == "megatron":
-        from slime.backends.megatron_utils.arguments import parse_args as megatron_parse_args
-        from slime.backends.megatron_utils.arguments import set_default_megatron_args
-        from slime.backends.megatron_utils.arguments import validate_args as megatron_validate_args
-
-        args = megatron_parse_args(extra_args_provider=add_slime_arguments)
-        if args.hf_checkpoint and not args.debug_rollout_only:
-            hf_config = AutoConfig.from_pretrained(args.hf_checkpoint, trust_remote_code=True)
-            hf_validate_args(args, hf_config)
-
-        args.rank = 0
-        args.world_size = args.actor_num_nodes * args.actor_num_gpus_per_node
-        args = set_default_megatron_args(args)
-    else:
-        logger.warning(
-            "🚧 🚧 🚧 FSDP backend is being rewritten, please use Megatron backend for better stability. 🚧 🚧 🚧"
+        raise NotImplementedError(
+            "Megatron backend is not supported. "
+            "Please use --train-backend fsdp instead. "
+            "Example: python train.py --train-backend fsdp --hf-checkpoint /path/to/model ..."
         )
 
-        from slime.backends.fsdp_utils.arguments import load_fsdp_args
+    # FSDP backend
+    from slime.backends.fsdp_utils.arguments import load_fsdp_args
 
-        args = load_fsdp_args(extra_args_provider=add_slime_arguments)
-        args.rank = 0  # Primary process rank for wandb initialization
-        args.world_size = args.actor_num_nodes * args.actor_num_gpus_per_node
+    args = load_fsdp_args(extra_args_provider=add_slime_arguments)
+    args.rank = 0  # Primary process rank for wandb initialization
+    args.world_size = args.actor_num_nodes * args.actor_num_gpus_per_node
 
     slime_validate_args(args)
-
-    if backend == "megatron":
-        megatron_validate_args(args)
-
-        # always use varlen
-        args.variable_seq_lengths = True
-        if getattr(args, "moe_token_dispatcher_type", None) == "allgather":
-            logger.info(
-                "--moe-token-dispatcher-type allgather does not support variable sequence length, "
-                "please use alltoall dispatcher instead."
-            )
-            args.moe_token_dispatcher_type = "alltoall"
-
-        if args.pipeline_model_parallel_size == 1:
-            assert args.decoder_first_pipeline_num_layers is None and args.decoder_last_pipeline_num_layers is None, (
-                "decoder_first_pipeline_num_layers and decoder_last_pipeline_num_layers should be None when "
-                "pipeline_model_parallel_size is 1."
-            )
 
     sglang_validate_args(args)
 

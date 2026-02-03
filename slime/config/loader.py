@@ -41,17 +41,18 @@ ARG_TO_SECTION: dict[str, tuple[str, str]] = {
     "distributed_timeout_minutes": ("cluster", "distributed_timeout_minutes"),
     # Train
     "train_backend": ("train", "train_backend"),
-    "qkv_format": ("train", "qkv_format"),
     "true_on_policy_mode": ("train", "true_on_policy_mode"),
     "train_env_vars": ("train", "train_env_vars"),
     "train_memory_margin_bytes": ("train", "train_memory_margin_bytes"),
     "enable_weights_backuper": ("train", "enable_weights_backuper"),
-    "megatron_to_hf_mode": ("train", "megatron_to_hf_mode"),
-    "custom_model_provider_path": ("train", "custom_model_provider_path"),
-    "recompute_loss_function": ("train", "recompute_loss_function"),
     "log_probs_chunk_size": ("train", "log_probs_chunk_size"),
     "only_train_params_name_list": ("train", "only_train_params_name_list"),
     "freeze_params_name_list": ("train", "freeze_params_name_list"),
+    # Megatron-specific train settings (DISABLED - Megatron backend not supported)
+    # "qkv_format": ("train", "qkv_format"),
+    # "megatron_to_hf_mode": ("train", "megatron_to_hf_mode"),
+    # "custom_model_provider_path": ("train", "custom_model_provider_path"),
+    # "recompute_loss_function": ("train", "recompute_loss_function"),
     # Rollout
     "hf_checkpoint": ("rollout", "hf_checkpoint"),
     "model_name": ("rollout", "model_name"),
@@ -239,10 +240,10 @@ ARG_TO_SECTION: dict[str, tuple[str, str]] = {
     "rollout_all_samples_process_path": ("rollout_buffer", "rollout_all_samples_process_path"),
     "disable_rollout_trim_samples": ("rollout_buffer", "disable_rollout_trim_samples"),
     "use_dynamic_global_batch_size": ("rollout_buffer", "use_dynamic_global_batch_size"),
-    # Megatron plugins
-    "custom_megatron_init_path": ("megatron_plugins", "custom_megatron_init_path"),
-    "custom_megatron_before_log_prob_hook_path": ("megatron_plugins", "custom_megatron_before_log_prob_hook_path"),
-    "custom_megatron_before_train_step_hook_path": ("megatron_plugins", "custom_megatron_before_train_step_hook_path"),
+    # Megatron plugins (DISABLED - Megatron backend not supported)
+    # "custom_megatron_init_path": ("megatron_plugins", "custom_megatron_init_path"),
+    # "custom_megatron_before_log_prob_hook_path": ("megatron_plugins", "custom_megatron_before_log_prob_hook_path"),
+    # "custom_megatron_before_train_step_hook_path": ("megatron_plugins", "custom_megatron_before_train_step_hook_path"),
     # MTP
     "mtp_num_layers": ("mtp", "mtp_num_layers"),
     "mtp_loss_scaling_factor": ("mtp", "mtp_loss_scaling_factor"),
