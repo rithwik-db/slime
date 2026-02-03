@@ -1434,10 +1434,109 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
     return add_slime_arguments
 
 
+def _parse_args_from_yaml(yaml_path: str, add_custom_arguments=None):
+    """
+    Parse arguments from a YAML config file with CLI overrides.
+
+    This function loads the config from YAML, parses remaining CLI args,
+    merges them (CLI takes precedence), and returns a namespace compatible
+    with the existing codebase.
+    """
+    from slime.config.loader import load_config, config_to_namespace, namespace_to_cli_overrides
+
+    logger.info(f"Loading configuration from YAML: {yaml_path}")
+
+    # First, parse CLI args to get any overrides
+    add_slime_arguments = get_slime_extra_args_provider(add_custom_arguments)
+    backend = parse_args_train_backend()
+
+    if backend == "megatron":
+        from slime.backends.megatron_utils.arguments import parse_args as megatron_parse_args
+        from slime.backends.megatron_utils.arguments import set_default_megatron_args
+        from slime.backends.megatron_utils.arguments import validate_args as megatron_validate_args
+
+        # Parse CLI args (these will be used as overrides)
+        cli_args = megatron_parse_args(extra_args_provider=add_slime_arguments)
+        cli_overrides = namespace_to_cli_overrides(cli_args)
+    else:
+        logger.warning(
+            "🚧 🚧 🚧 FSDP backend is being rewritten, please use Megatron backend for better stability. 🚧 🚧 🚧"
+        )
+        from slime.backends.fsdp_utils.arguments import load_fsdp_args
+
+        cli_args = load_fsdp_args(extra_args_provider=add_slime_arguments)
+        cli_overrides = namespace_to_cli_overrides(cli_args)
+
+    # Load YAML config with CLI overrides
+    config = load_config(yaml_path=yaml_path, cli_overrides=cli_overrides)
+
+    # Convert to namespace for backward compatibility
+    args = config_to_namespace(config)
+
+    # Store the original config object for access if needed
+    args._slime_config = config
+
+    # Copy over any additional attributes from CLI args that aren't in the config
+    # (e.g., Megatron-specific args that weren't mapped)
+    for key, value in vars(cli_args).items():
+        if not hasattr(args, key):
+            setattr(args, key, value)
+
+    # Apply backend-specific defaults and setup
+    if backend == "megatron":
+        if args.hf_checkpoint and not getattr(args, "debug_rollout_only", False):
+            hf_config = AutoConfig.from_pretrained(args.hf_checkpoint, trust_remote_code=True)
+            hf_validate_args(args, hf_config)
+
+        args.rank = 0
+        args.world_size = args.actor_num_nodes * args.actor_num_gpus_per_node
+        args = set_default_megatron_args(args)
+    else:
+        args.rank = 0
+        args.world_size = args.actor_num_nodes * args.actor_num_gpus_per_node
+
+    # Run validation
+    slime_validate_args(args)
+
+    if backend == "megatron":
+        megatron_validate_args(args)
+
+        # always use varlen
+        args.variable_seq_lengths = True
+        if getattr(args, "moe_token_dispatcher_type", None) == "allgather":
+            logger.info(
+                "--moe-token-dispatcher-type allgather does not support variable sequence length, "
+                "please use alltoall dispatcher instead."
+            )
+            args.moe_token_dispatcher_type = "alltoall"
+
+        if args.pipeline_model_parallel_size == 1:
+            assert args.decoder_first_pipeline_num_layers is None and args.decoder_last_pipeline_num_layers is None, (
+                "decoder_first_pipeline_num_layers and decoder_last_pipeline_num_layers should be None when "
+                "pipeline_model_parallel_size is 1."
+            )
+
+    sglang_validate_args(args)
+
+    logger.info("Configuration loaded successfully from YAML")
+    return args
+
+
 def parse_args(add_custom_arguments=None):
     # Users may call `parse_args` very early, thus we ensure logger is configured here
     configure_logger()
 
+    # Check for --train-yaml first
+    from slime.config.loader import create_train_yaml_parser
+
+    yaml_parser = create_train_yaml_parser()
+    yaml_args, remaining_argv = yaml_parser.parse_known_args()
+
+    if yaml_args.train_yaml:
+        # Use YAML-based config loading
+        return _parse_args_from_yaml(yaml_args.train_yaml, add_custom_arguments)
+
+    # Legacy CLI-only path (existing behavior)
     add_slime_arguments = get_slime_extra_args_provider(add_custom_arguments)
 
     backend = parse_args_train_backend()

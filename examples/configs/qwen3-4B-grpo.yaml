@@ -1,0 +1,195 @@
+# Example Slime Training Configuration
+# Qwen3-4B with GRPO (Group Relative Policy Optimization)
+#
+# Usage:
+#   python train.py --train-yaml examples/configs/qwen3-4B-grpo.yaml
+#
+# CLI arguments can override any value in this file:
+#   python train.py --train-yaml examples/configs/qwen3-4B-grpo.yaml --lr 2e-6
+
+# =============================================================================
+# Cluster Configuration
+# =============================================================================
+cluster:
+  actor_num_nodes: 1
+  actor_num_gpus_per_node: 8
+  rollout_num_gpus_per_engine: 2
+  colocate: true
+  # offload_train: true  # Automatically set when colocate=true
+  # offload_rollout: true
+
+# =============================================================================
+# Training Backend Configuration
+# =============================================================================
+train:
+  train_backend: megatron
+  qkv_format: thd
+  # train_memory_margin_bytes: 1073741824  # 1GB default
+
+# =============================================================================
+# Rollout (Inference) Configuration
+# =============================================================================
+rollout:
+  hf_checkpoint: /path/to/Qwen3-4B
+  rollout_temperature: 1.0
+  rollout_top_p: 1.0
+  rollout_max_response_len: 8192
+  rollout_max_context_len: 16384
+  rollout_shuffle: true
+  rollout_seed: 42
+
+# =============================================================================
+# Data Configuration
+# =============================================================================
+data:
+  prompt_data: /path/to/training_data.jsonl
+  input_key: prompt
+  label_key: answer
+  apply_chat_template: true
+
+  # Batch sizes
+  rollout_batch_size: 32
+  n_samples_per_prompt: 8
+  global_batch_size: 256
+  # num_steps_per_rollout: 1  # Alternative: set steps instead of global_batch_size
+
+  # Dynamic batching (recommended for variable length sequences)
+  balance_data: true
+  use_dynamic_batch_size: true
+  max_tokens_per_gpu: 9216
+
+  # Training iterations
+  num_rollout: 3000
+  # num_epoch: 3  # Alternative: use epochs instead of num_rollout
+
+# =============================================================================
+# Algorithm Configuration (GRPO)
+# =============================================================================
+algorithm:
+  # Checkpoints
+  ref_load: /path/to/Qwen3-4B_torch_dist
+  load: /path/to/checkpoints/
+  save: /path/to/checkpoints/
+  save_interval: 100
+
+  # GRPO settings
+  advantage_estimator: grpo
+  grpo_std_normalization: true  # Dr.GRPO
+  rewards_normalization: true
+
+  # KL divergence
+  use_kl_loss: true
+  kl_loss_coef: 0.0
+  kl_loss_type: low_var_kl
+
+  # PPO clipping
+  eps_clip: 0.2
+  eps_clip_high: 0.28
+
+  # Optimizer
+  lr: 1e-6
+  clip_grad: 1.0
+  seed: 42
+
+# =============================================================================
+# Evaluation Configuration
+# =============================================================================
+evaluation:
+  eval_interval: 100
+  n_samples_per_eval_prompt: 16
+  eval_max_response_len: 16384
+  eval_top_p: 1.0
+
+  # Evaluation datasets
+  datasets:
+    - name: aime
+      path: /path/to/aime.jsonl
+      rm_type: deepscaler
+      n_samples_per_eval_prompt: 16
+
+    - name: math500
+      path: /path/to/math500.jsonl
+      rm_type: math
+      n_samples_per_eval_prompt: 8
+
+# =============================================================================
+# Reward Model Configuration
+# =============================================================================
+reward:
+  rm_type: deepscaler
+  # For custom reward functions:
+  # custom_rm_path: my_module.my_reward_function
+
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+wandb:
+  use_wandb: true
+  wandb_project: slime-qwen3-grpo
+  wandb_group: experiments
+  log_passrate: true
+
+tensorboard:
+  use_tensorboard: false
+
+# =============================================================================
+# SGLang Configuration
+# =============================================================================
+sglang:
+  sglang_mem_fraction_static: 0.7
+
+# =============================================================================
+# Megatron Model Architecture (passthrough args)
+# These are passed directly to Megatron and should match your model
+# =============================================================================
+
+# Model architecture
+num_layers: 36
+hidden_size: 2560
+ffn_hidden_size: 9728
+num_attention_heads: 32
+group_query_attention: true
+num_query_groups: 8
+kv_channels: 128
+
+# Normalization
+normalization: RMSNorm
+norm_epsilon: 1.0e-6
+
+# Position embeddings
+use_rotary_position_embeddings: true
+rotary_base: 1000000
+
+# Activation
+swiglu: true
+disable_bias_linear: true
+
+# Vocabulary
+vocab_size: 151936
+padded_vocab_size: 152064
+
+# Parallelism
+tensor_model_parallel_size: 2
+pipeline_model_parallel_size: 1
+context_parallel_size: 1
+sequence_parallel: true
+
+# Recomputation
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
+
+# Precision
+bf16: true
+attention_softmax_in_fp32: true
+accumulate_allreduce_grads_in_fp32: true
+
+# Optimizer
+lr_decay_style: constant
+weight_decay: 0.1
+adam_beta1: 0.9
+adam_beta2: 0.98
+
+# Attention
+attention_backend: flash
+qk_layernorm: true
