@@ -1082,6 +1082,33 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
 
             return parser
 
+        # mlflow
+        def add_mlflow_arguments(parser):
+            parser.add_argument("--use-mlflow", action="store_true", default=False)
+            parser.add_argument(
+                "--mlflow-tracking-uri",
+                type=str,
+                default=None,
+                help=(
+                    "MLflow tracking URI. If not set and DATABRICKS_HOST/DATABRICKS_TOKEN "
+                    "env vars are present, defaults to 'databricks'."
+                ),
+            )
+            parser.add_argument(
+                "--mlflow-experiment-name",
+                type=str,
+                default=None,
+                help="MLflow experiment name. For Databricks, use format '/Users/user@example.com/experiment-name'.",
+            )
+            parser.add_argument(
+                "--mlflow-run-name",
+                type=str,
+                default=None,
+                help="MLflow run name.",
+            )
+            parser.add_argument("--mlflow-run-id", type=str, default=None)
+            return parser
+
         # debug
         def add_debug_arguments(parser):
             parser.add_argument(
@@ -1410,6 +1437,7 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
         parser = add_algo_arguments(parser)
         parser = add_wandb_arguments(parser)
         parser = add_tensorboard_arguments(parser)
+        parser = add_mlflow_arguments(parser)
         parser = add_router_arguments(parser)
         parser = add_debug_arguments(parser)
         parser = add_sglang_arguments(parser)
