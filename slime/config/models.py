@@ -83,6 +83,8 @@ class TrainConfig(SlimeBaseConfig):
     freeze_params_name_list: list[str] | None = Field(
         default=None, description="Regex patterns of parameter names to FREEZE"
     )
+    gradient_checkpointing: bool = Field(default=False, description="Enable gradient checkpointing to save memory")
+    attn_implementation: str = Field(default="flash_attention_2", description="Attention implementation (flash_attention_2, flash_attention_3)")
 
 
 # =============================================================================
@@ -312,6 +314,13 @@ class AlgorithmConfig(SlimeBaseConfig):
     clip_grad: float = Field(default=1.0, description="Gradient clipping value")
     calculate_per_token_loss: bool = Field(default=False, description="Calculate per-token loss")
     lr: float = Field(default=1e-6, description="Learning rate")
+
+    # Optimizer settings (passed to FSDP backend)
+    optimizer: str = Field(default="adam", description="Optimizer type (adam)")
+    lr_decay_style: str = Field(default="constant", description="LR decay style (constant, linear, cosine)")
+    weight_decay: float = Field(default=0.0, description="Weight decay")
+    adam_beta1: float = Field(default=0.9, description="Adam beta1")
+    adam_beta2: float = Field(default=0.95, description="Adam beta2")
 
     # Critic
     num_critic_only_steps: int = Field(default=0, description="Number of critic-only training steps")
@@ -589,6 +598,9 @@ class SGLangConfig(SlimeBaseConfig):
     sglang_mem_fraction_static: float | None = Field(default=None, description="Static memory fraction for SGLang")
     sglang_pp_size: int = Field(default=1, description="Pipeline parallel size for SGLang")
     sglang_pipeline_parallel_size: int = Field(default=1, description="Pipeline parallel size (alias)")
+    sglang_decode_log_interval: int | None = Field(default=None, description="Decode log interval")
+    sglang_chunked_prefill_size: int | None = Field(default=None, description="Chunked prefill size")
+    sglang_attention_backend: str | None = Field(default=None, description="Attention backend (fa3, flashinfer)")
 
 
 # =============================================================================

@@ -70,7 +70,8 @@ def _pick_from_mapping(data: dict[str, Any], key_names: tuple[str, ...] | None) 
     if key_names is None:
         return _MISSING
     for key_name in key_names:
-        if key_name in data:
+        # Treat None values as "not specified" to allow fallback to args
+        if key_name in data and data[key_name] is not None:
             return data[key_name]
     return _MISSING
 

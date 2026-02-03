@@ -1452,6 +1452,23 @@ def _filter_train_yaml_from_argv(argv: list[str]) -> list[str]:
     return filtered
 
 
+def _extract_explicit_cli_args(filtered_argv: list[str]) -> set[str]:
+    """
+    Extract the set of argument names that were explicitly provided on the command line.
+
+    This parses the argv list to find which --arg-name flags were used,
+    converting them to underscore format (arg_name) for matching.
+    """
+    explicit_args = set()
+    for arg in filtered_argv:
+        if arg.startswith("--"):
+            # Handle --arg=value and --arg value formats
+            arg_name = arg.split("=")[0][2:]  # Remove -- prefix
+            # Convert kebab-case to snake_case
+            explicit_args.add(arg_name.replace("-", "_"))
+    return explicit_args
+
+
 def _parse_args_from_yaml(yaml_path: str, add_custom_arguments=None):
     """
     Parse arguments from a YAML config file with CLI overrides.
@@ -1462,12 +1479,15 @@ def _parse_args_from_yaml(yaml_path: str, add_custom_arguments=None):
 
     Note: Only FSDP backend is supported. Megatron backend has been disabled.
     """
-    from slime.config.loader import load_config, config_to_namespace, namespace_to_cli_overrides
+    from slime.config.loader import load_config, config_to_namespace
 
     logger.info(f"Loading configuration from YAML: {yaml_path}")
 
     # Filter out --train-yaml from argv and pass directly to FSDP parser
     filtered_argv = _filter_train_yaml_from_argv(sys.argv[1:])
+
+    # Track which args were explicitly provided on command line
+    explicit_cli_args = _extract_explicit_cli_args(filtered_argv)
 
     # Parse CLI args to get any overrides
     add_slime_arguments = get_slime_extra_args_provider(add_custom_arguments)
@@ -1477,7 +1497,12 @@ def _parse_args_from_yaml(yaml_path: str, add_custom_arguments=None):
 
     cli_args = load_fsdp_args(extra_args_provider=add_slime_arguments, argv=filtered_argv)
 
-    cli_overrides = namespace_to_cli_overrides(cli_args)
+    # Only use CLI args that were EXPLICITLY provided, not defaults
+    # This ensures YAML values are not overridden by CLI defaults
+    cli_overrides = {}
+    for key, value in vars(cli_args).items():
+        if key in explicit_cli_args and value is not None:
+            cli_overrides[key] = value
 
     # Load YAML config with CLI overrides
     config = load_config(yaml_path=yaml_path, cli_overrides=cli_overrides)

@@ -14,8 +14,8 @@
 cluster:
   actor_num_nodes: 1
   actor_num_gpus_per_node: 2
-  rollout_num_gpus: 2  # Required: total GPUs for rollout
-  rollout_num_gpus_per_engine: 2
+  rollout_num_gpus: 2
+  rollout_num_gpus_per_engine: 1
   colocate: false
   # offload_train: true  # Automatically set when colocate=true
   # offload_rollout: true
@@ -25,8 +25,11 @@ cluster:
 # =============================================================================
 train:
   train_backend: fsdp  # Only FSDP is supported (Megatron backend disabled)
+  gradient_checkpointing: true
+  attn_implementation: flash_attention_3
+  train_env_vars:
+    PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
   # train_memory_margin_bytes: 1073741824  # 1GB default
-  # qkv_format: thd  # Megatron-only setting, not used with FSDP
 
 # =============================================================================
 # Rollout (Inference) Configuration
@@ -39,6 +42,7 @@ rollout:
   rollout_max_context_len: 16384
   rollout_shuffle: true
   rollout_seed: 42
+  update_weight_buffer_size: 536870912  # 512MB
 
 # =============================================================================
 # Data Configuration
@@ -50,9 +54,9 @@ data:
   apply_chat_template: true
 
   # Batch sizes
-  rollout_batch_size: 32
+  rollout_batch_size: 8
   n_samples_per_prompt: 8
-  global_batch_size: 256
+  global_batch_size: 64
   # num_steps_per_rollout: 1  # Alternative: set steps instead of global_batch_size
 
   # Dynamic batching (recommended for variable length sequences)
@@ -61,7 +65,7 @@ data:
   max_tokens_per_gpu: 9216
 
   # Training iterations
-  num_rollout: 256
+  num_rollout: 100
   # num_epoch: 3  # Alternative: use epochs instead of num_rollout
 
 # =============================================================================
@@ -80,7 +84,7 @@ algorithm:
   rewards_normalization: true
 
   # KL divergence
-  use_kl_loss: false
+  use_kl_loss: true
   kl_loss_coef: 0.0
   kl_loss_type: low_var_kl
 
@@ -88,10 +92,27 @@ algorithm:
   eps_clip: 0.2
   eps_clip_high: 0.28
 
-  # Optimizer
+  # Learning rate and optimizer
   lr: 1e-6
   clip_grad: 1.0
   seed: 42
+  optimizer: adam
+  lr_decay_style: constant
+  weight_decay: 0.1
+  adam_beta1: 0.9
+  adam_beta2: 0.98
+
+# =============================================================================
+# Fault Tolerance Configuration
+# =============================================================================
+fault_tolerance:
+  use_fault_tolerance: true
+
+# =============================================================================
+# Debug Configuration
+# =============================================================================
+debug:
+  dump_details: /root/shared_data/qwen3-4B-fsdp-1116-noref/dump_details
 
 # =============================================================================
 # Evaluation Configuration
@@ -108,6 +129,8 @@ evaluation:
       path: /root/aime-2024/aime-2024.jsonl
       rm_type: deepscaler
       n_samples_per_eval_prompt: 16
+      input_key: prompt
+      label_key: label
 
 # =============================================================================
 # Reward Model Configuration
@@ -133,4 +156,7 @@ tensorboard:
 # SGLang Configuration
 # =============================================================================
 sglang:
-  sglang_mem_fraction_static: 0.7
+  sglang_mem_fraction_static: 0.75
+  sglang_decode_log_interval: 1000
+  sglang_chunked_prefill_size: 4096
+  sglang_attention_backend: fa3
