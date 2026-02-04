@@ -39,6 +39,7 @@ train:
 # =============================================================================
 rollout:
   hf_checkpoint: /root/Qwen3-4B/
+  update_weights_interval: 1  # How often to sync weights to inference (for async training)
   rollout_temperature: 1.0
   rollout_top_p: 1.0
   rollout_max_response_len: 8192
