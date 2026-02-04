@@ -34,6 +34,7 @@ from slime.config.models import (
     PrefillDecodeConfig,
     CIConfig,
     SGLangConfig,
+    DataDownloadConfig,
 )
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ _SECTION_CONFIGS: list[tuple[str, type]] = [
     ("prefill_decode", PrefillDecodeConfig),
     ("ci", CIConfig),
     ("sglang", SGLangConfig),
+    ("data_download", DataDownloadConfig),
 ]
 
 
