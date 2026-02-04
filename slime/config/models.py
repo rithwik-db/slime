@@ -60,6 +60,20 @@ class ClusterConfig(SlimeBaseConfig):
 
 
 # =============================================================================
+# Rayless Configuration (add_rayless_arguments)
+# =============================================================================
+
+
+class RaylessConfig(SlimeBaseConfig):
+    """Configuration for rayless/SPMD-style startup (torchrun-compatible)."""
+
+    use_rayless_init: bool = Field(
+        default=False, description="Use rayless (torchrun/SPMD) initialization instead of Ray CLI"
+    )
+    ray_init_timeout: int = Field(default=300, description="Timeout in seconds for Ray cluster initialization")
+
+
+# =============================================================================
 # Training Configuration (add_train_arguments)
 # =============================================================================
 
@@ -639,6 +653,7 @@ class SlimeConfig(SlimeBaseConfig):
     model_config = ConfigDict(extra="allow")  # Allow unknown args at root
 
     cluster: ClusterConfig = Field(default_factory=ClusterConfig)
+    rayless: RaylessConfig = Field(default_factory=RaylessConfig)
     train: TrainConfig = Field(default_factory=TrainConfig)
     rollout: RolloutConfig = Field(default_factory=RolloutConfig)
     fault_tolerance: FaultToleranceConfig = Field(default_factory=FaultToleranceConfig)

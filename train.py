@@ -95,6 +95,23 @@ def train(args):
     ray.get(rollout_manager.dispose.remote())
 
 
-if __name__ == "__main__":
+def main():
     args = parse_args()
-    train(args)
+
+    if getattr(args, "use_rayless_init", False):
+        # Using Rayless/SPMD mode to initialize Ray via torch.distributed
+        from slime.utils.ray_utils import get_node_rank, start_ray_server
+
+        node_rank = get_node_rank()
+        timeout = getattr(args, "ray_init_timeout", 300)
+        with start_ray_server(timeout_seconds=timeout):
+            # Only node 0 orchestrates training; after start_ray_server,
+            # all other nodes are connected to node_rank = 0
+            if node_rank == 0:
+                train(args)
+    else:
+        train(args)
+
+
+if __name__ == "__main__":
+    main()
