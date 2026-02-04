@@ -6,28 +6,6 @@ from slime.utils.logging_utils import configure_logger, init_tracking
 from slime.utils.misc import should_run_periodic_action
 
 
-def download_cloud_datasets(args):
-    """Download datasets from cloud storage if configured."""
-    config = getattr(args, "_slime_config", None)
-    if config is None:
-        return
-
-    data_download = getattr(config, "data_download", None)
-    if data_download is None or not data_download.enabled:
-        return
-
-    if not data_download.downloads:
-        return
-
-    from slime.utils.databricks_downloader import download_datasets
-
-    downloads = [
-        {"source": entry.source, "destination": entry.destination}
-        for entry in data_download.downloads
-    ]
-    download_datasets(downloads)
-
-
 def train(args):
     configure_logger()
     # allocate the GPUs
@@ -121,7 +99,8 @@ def main():
     args = parse_args()
 
     # Download cloud datasets before any other initialization
-    download_cloud_datasets(args)
+    from slime.utils.databricks_downloader import maybe_download_datasets
+    maybe_download_datasets(getattr(args, "_slime_config", None))
 
     if getattr(args, "use_rayless_init", False):
         # Using Rayless/SPMD mode to initialize Ray via torch.distributed

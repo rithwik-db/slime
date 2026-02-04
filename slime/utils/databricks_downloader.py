@@ -93,24 +93,25 @@ def download_from_unity_catalog(source: str, destination: str) -> None:
         raise IOError(f"Failed to download {source}: {e}") from e
 
 
-def download_datasets(downloads: list[dict]) -> None:
+def maybe_download_datasets(config) -> None:
+    """Download datasets from Unity Catalog if configured.
+
+    Args:
+        config: SlimeConfig object (or None if not using YAML config)
     """
-    Download multiple datasets from Databricks Unity Catalog.
-    """
-    if not downloads:
+    if config is None:
         return
 
-    logger.info(f"Starting download of {len(downloads)} dataset(s) from Unity Catalog...")
+    data_download = getattr(config, "data_download", None)
+    if data_download is None or not data_download.enabled:
+        return
 
-    for i, download_spec in enumerate(downloads, 1):
-        source = download_spec.get("source")
-        destination = download_spec.get("destination")
+    if not data_download.downloads:
+        return
 
-        if not source or not destination:
-            raise ValueError(
-                f"Download entry {i} missing required 'source' or 'destination' key: {download_spec}"
-            )
+    logger.info(f"Downloading {len(data_download.downloads)} dataset(s) from Unity Catalog...")
 
-        download_from_unity_catalog(source, destination)
+    for entry in data_download.downloads:
+        download_from_unity_catalog(entry.source, entry.destination)
 
     logger.info("All dataset downloads complete.")
