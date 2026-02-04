@@ -1,10 +1,5 @@
-# Copyright 2024 MosaicML ComposeRL authors
-# SPDX-License-Identifier: Apache-2.0
-
 """
 Utilities for initializing Ray cluster in an SPMD/rayless environment.
-
-Based on MosaicML ComposeRL utilities.
 
 This module provides functions to initialize a Ray cluster using torch.distributed
 for node coordination. It supports multiple environment variable conventions
