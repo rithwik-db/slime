@@ -1,9 +1,36 @@
 # Copied from - https://github.com/NVIDIA-NeMo/Skills/blob/main/nemo_skills/evaluation/math_grader.py
 
 import re
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
 from latex2sympy2_extended import NormalizationConfig, normalize_latex
 from math_verify import LatexExtractionConfig, StringExtractionConfig, parse, verify
+
+
+def _safe_parse(text, extraction_configs, timeout=5.0):
+    """Thread-safe wrapper for math_verify.parse with timeout handling. Required for Ray workers."""
+    if timeout is None:
+        return parse(text, extraction_configs, parsing_timeout=None)
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(parse, text, extraction_configs, parsing_timeout=None)
+        try:
+            return future.result(timeout=timeout)
+        except FuturesTimeoutError:
+            return None
+
+
+def _safe_verify(gold, target, timeout=5.0):
+    """Thread-safe wrapper for math_verify.verify with timeout handling. Required for Ray workers."""
+    if timeout is None:
+        return verify(gold, target, timeout_seconds=None)
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(verify, gold, target, timeout_seconds=None)
+        try:
+            return future.result(timeout=timeout)
+        except FuturesTimeoutError:
+            return False
 
 
 def is_equiv(gt_answer, predicted_answer):
@@ -27,10 +54,10 @@ def is_equiv(gt_answer, predicted_answer):
     norm_gt_mcq = gt_answer.strip()
 
     is_mcq = re.fullmatch("|".join(mcq_options), norm_gt_mcq)
-    parsed_gt = parse(gt_answer, [StringExtractionConfig(strings=tuple(mcq_options))])
-    parsed_pred = parse(predicted_answer, [StringExtractionConfig(strings=tuple(mcq_options))])
-    if is_mcq and verify(parsed_gt, parsed_pred):
-        return verify(parsed_gt, parsed_pred)
+    parsed_gt = _safe_parse(gt_answer, [StringExtractionConfig(strings=tuple(mcq_options))])
+    parsed_pred = _safe_parse(predicted_answer, [StringExtractionConfig(strings=tuple(mcq_options))])
+    if is_mcq and _safe_verify(parsed_gt, parsed_pred):
+        return _safe_verify(parsed_gt, parsed_pred)
 
     # Additional normalization step
     gt_answer = _additional_normalization(gt_answer)
@@ -57,10 +84,10 @@ def is_equiv(gt_answer, predicted_answer):
     if not re.search(latex_env_search_pattern, current_predicted_answer, re.DOTALL):
         current_predicted_answer = f"${current_predicted_answer}$"
 
-    parsed_gt = parse(current_gt_answer, [LatexExtractionConfig()])
-    parsed_pred = parse(current_predicted_answer, [LatexExtractionConfig()])
+    parsed_gt = _safe_parse(current_gt_answer, [LatexExtractionConfig()])
+    parsed_pred = _safe_parse(current_predicted_answer, [LatexExtractionConfig()])
 
-    return verify(parsed_gt, parsed_pred)
+    return _safe_verify(parsed_gt, parsed_pred)
 
 
 def _additional_normalization(expr):
