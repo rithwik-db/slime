@@ -636,6 +636,28 @@ class SGLangConfig(SlimeBaseConfig):
 
 
 # =============================================================================
+# Data Download Configuration
+# =============================================================================
+
+
+class DataDownloadEntry(SlimeBaseConfig):
+    """Single data download entry for cloud storage."""
+
+    source: str = Field(description="Cloud storage path (e.g., dbfs:/Volumes/catalog/schema/volume/file.jsonl)")
+    destination: str = Field(description="Local filesystem path to save the file")
+
+
+class DataDownloadConfig(SlimeBaseConfig):
+    """Configuration for downloading datasets from cloud storage before training."""
+
+    enabled: bool = Field(default=False, description="Enable cloud storage downloads")
+    downloads: list[DataDownloadEntry] = Field(
+        default_factory=list,
+        description="List of files to download from cloud storage"
+    )
+
+
+# =============================================================================
 # Root Configuration
 # =============================================================================
 
@@ -672,6 +694,7 @@ class SlimeConfig(SlimeBaseConfig):
     prefill_decode: PrefillDecodeConfig = Field(default_factory=PrefillDecodeConfig)
     ci: CIConfig = Field(default_factory=CIConfig)
     sglang: SGLangConfig = Field(default_factory=SGLangConfig)
+    data_download: DataDownloadConfig = Field(default_factory=DataDownloadConfig)
 
     def to_flat_dict(self) -> dict[str, Any]:
         """

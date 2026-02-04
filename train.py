@@ -98,6 +98,10 @@ def train(args):
 def main():
     args = parse_args()
 
+    # Download cloud datasets before any other initialization
+    from slime.utils.databricks_downloader import maybe_download_datasets
+    maybe_download_datasets(getattr(args, "_slime_config", None))
+
     if getattr(args, "use_rayless_init", False):
         # Using Rayless/SPMD mode to initialize Ray via torch.distributed
         from slime.utils.ray_utils import get_node_rank, start_ray_server

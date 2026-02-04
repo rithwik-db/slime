@@ -8,6 +8,12 @@
 # CLI arguments can override any value in this file:
 #   python train.py --train-yaml examples/configs/qwen3-4B-grpo.yaml --lr 2e-6
 
+data_download:
+  enabled: true
+  downloads:
+    - source: "dbfs:/Volumes/kie/rithwikediga/dpsk_8b_open_r1_48k/with_cot/slime.jsonl"
+      destination: "/root/dpsk_8b_open_r1_48k/slime.jsonl"
+
 # =============================================================================
 # Cluster Configuration
 # =============================================================================
@@ -17,19 +23,16 @@ cluster:
   rollout_num_gpus: 2
   rollout_num_gpus_per_engine: 1
   colocate: false
-  # offload_train: true  # Automatically set when colocate=true
-  # offload_rollout: true
 
 # =============================================================================
 # Training Backend Configuration
 # =============================================================================
 train:
-  train_backend: fsdp  # Only FSDP is supported (Megatron backend disabled)
+  train_backend: fsdp
   gradient_checkpointing: true
   attn_implementation: flash_attention_3
   train_env_vars:
     PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
-  # train_memory_margin_bytes: 1073741824  # 1GB default
 
 # =============================================================================
 # Rollout (Inference) Configuration
@@ -48,7 +51,7 @@ rollout:
 # Data Configuration
 # =============================================================================
 data:
-  prompt_data: /root/dapo-math-17k/dapo-math-17k.jsonl
+  prompt_data: /root/dpsk_8b_open_r1_48k/slime.jsonl
   input_key: prompt
   label_key: label
   apply_chat_template: true
@@ -57,7 +60,7 @@ data:
   rollout_batch_size: 8
   n_samples_per_prompt: 8
   global_batch_size: 64
-  # num_steps_per_rollout: 1  # Alternative: set steps instead of global_batch_size
+  num_steps_per_rollout: 1
 
   # Dynamic batching (recommended for variable length sequences)
   balance_data: true
@@ -65,8 +68,7 @@ data:
   max_tokens_per_gpu: 9216
 
   # Training iterations
-  num_rollout: 100
-  # num_epoch: 3  # Alternative: use epochs instead of num_rollout
+  num_rollout: 20
 
 # =============================================================================
 # Algorithm Configuration (GRPO)
@@ -80,7 +82,7 @@ algorithm:
 
   # GRPO settings
   advantage_estimator: grpo
-  grpo_std_normalization: true  # Dr.GRPO
+  grpo_std_normalization: true
   rewards_normalization: true
 
   # KL divergence
@@ -112,31 +114,31 @@ fault_tolerance:
 # Debug Configuration
 # =============================================================================
 debug:
-  dump_details: /root/shared_data/qwen3-4B-fsdp-1116-noref/dump_details
+  dump_details: /root/Qwen3-4B-checkpoints/dump_details
 
 # =============================================================================
 # Evaluation Configuration
 # =============================================================================
-evaluation:
-  eval_interval: 100
-  n_samples_per_eval_prompt: 1
-  eval_max_response_len: 16384
-  eval_top_p: 1.0
+# evaluation:
+#   eval_interval: 100
+#   n_samples_per_eval_prompt: 1
+#   eval_max_response_len: 16384
+#   eval_top_p: 1.0
 
-  # Evaluation datasets
-  datasets:
-    - name: aime
-      path: /root/aime-2024/aime-2024.jsonl
-      rm_type: deepscaler
-      n_samples_per_eval_prompt: 1
-      input_key: prompt
-      label_key: label
+#   # Evaluation datasets
+#   datasets:
+#     - name: aime
+#       path: /root/aime-2024/aime-2024.jsonl
+#       rm_type: deepscaler
+#       n_samples_per_eval_prompt: 1
+#       input_key: prompt
+#       label_key: label
 
 # =============================================================================
 # Reward Model Configuration
 # =============================================================================
 reward:
-  rm_type: deepscaler
+  rm_type: math_verifier
   # For custom reward functions:
   # custom_rm_path: my_module.my_reward_function
 
