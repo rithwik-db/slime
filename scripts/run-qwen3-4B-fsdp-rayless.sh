@@ -1,30 +1,23 @@
 #!/bin/bash
-# Rayless startup script using torchrun
-# Run this same script on each node - runtime provides:
-#   WORLD_SIZE, LOCAL_WORLD_SIZE, NODE_RANK, MASTER_ADDR, MASTER_PORT
+# Rayless startup script - run ONE process per node
+# Infrastructure must provide: NODE_RANK, WORLD_SIZE, LOCAL_WORLD_SIZE, MASTER_ADDR, MASTER_PORT
+#
+# Python reads these env vars directly and handles all orchestration logic.
+# No env var manipulation needed in bash.
+
+# Cleanup any existing processes
+pkill -9 sglang 2>/dev/null || true
+ray stop --force 2>/dev/null || true
+sleep 3
 
 set -ex
-
-# Prevent buffering
 export PYTHONUNBUFFERED=1
 
-# Derive torchrun parameters from runtime-provided env vars
-# WORLD_SIZE = total GPUs across all nodes
-# LOCAL_WORLD_SIZE = GPUs per node
-# NODE_RANK = this node's rank (0, 1, 2, ...)
-NNODES=$((WORLD_SIZE / LOCAL_WORLD_SIZE))
-NPROC_PER_NODE=${LOCAL_WORLD_SIZE}
-
-echo "Node ${NODE_RANK}/${NNODES}: launching ${NPROC_PER_NODE} processes"
+echo "Node ${NODE_RANK}: Starting rayless initialization"
+echo "Infrastructure: WORLD_SIZE=${WORLD_SIZE}, LOCAL_WORLD_SIZE=${LOCAL_WORLD_SIZE}"
 echo "Master: ${MASTER_ADDR}:${MASTER_PORT}"
 
-# Launch with torchrun (sets RANK, LOCAL_RANK per process)
-torchrun \
-    --nnodes=${NNODES} \
-    --nproc_per_node=${NPROC_PER_NODE} \
-    --node_rank=${NODE_RANK} \
-    --master_addr=${MASTER_ADDR} \
-    --master_port=${MASTER_PORT} \
-    /root/slime/train.py \
+# Python handles all orchestration logic - no env var manipulation needed
+python /root/slime/train.py \
     --use-rayless-init \
     --train-yaml /root/slime/examples/configs/qwen3-4B-grpo.yaml

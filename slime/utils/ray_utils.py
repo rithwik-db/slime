@@ -2,15 +2,18 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Utilities for initializing Ray cluster in a torchrun/SPMD environment.
+Utilities for initializing Ray cluster in an SPMD/rayless environment.
 
 Based on MosaicML ComposeRL utilities.
 
-Expected environment variables (set by torchrun per-process):
-- WORLD_SIZE: Total number of processes
-- RANK: Global rank of this process
-- LOCAL_RANK: Local rank on this node
-- LOCAL_WORLD_SIZE: Number of processes per node
+This module provides functions to initialize a Ray cluster using torch.distributed
+for node coordination. It supports multiple environment variable conventions
+commonly used by infrastructure schedulers (MCLI, Slurm, Kubernetes, torchrun).
+
+Expected environment variables (set by infrastructure):
+- NODE_RANK or RANK: Node rank (0, 1, 2, ...)
+- NUM_NODES or NNODES or WORLD_SIZE/LOCAL_WORLD_SIZE: Total number of nodes
+- LOCAL_WORLD_SIZE: Number of GPUs per node
 - MASTER_ADDR: IP address of the master node
 - MASTER_PORT: Port for torch.distributed rendezvous
 """
@@ -23,74 +26,207 @@ import time
 from contextlib import contextmanager
 
 import ray
+import torch
 import torch.distributed as dist
 
 # Set up logger
 logger = logging.getLogger(__name__)
 
 
-def init_ray_with_torch_distributed(timeout_seconds: int = 300):
-    """Initialize Ray cluster in a distributed PyTorch environment.
+# =============================================================================
+# Environment Variable Helpers
+# =============================================================================
 
-    This function sets up a Ray cluster where the master node (rank 0) starts the head node,
-    and other nodes connect to it. It handles the coordination between PyTorch distributed
-    training and Ray cluster initialization. It assumes torch.distributed
-    is already initialized on all ranks and all the associated nodes are joining the ray cluster.
 
-    The function:
-    1. Starts Ray head node on rank 0
-    2. Broadcasts the Ray address to all other ranks
-    3. Connects worker nodes to the head node
-    4. Waits for all GPUs to be available before proceeding
+def get_node_rank() -> int:
+    """Get this node's rank from infrastructure environment variables.
 
-    Args:
-        timeout_seconds (int): Maximum time to wait for GPUs to become available (default: 300)
+    Supports multiple conventions:
+    - NODE_RANK: Explicit node rank (HPC schedulers, Slurm, MCLI)
+    - RANK: When running one process per node, RANK is the node rank
 
     Returns:
-        str: The Ray cluster address (GCS address) that can be used by other processes
-
-    Raises:
-        RuntimeError: If the required number of GPUs are not available within the timeout period
-        subprocess.CalledProcessError: If Ray start/stop commands fail
+        int: The node rank (0-indexed)
     """
-    # init ray on master node, rank 0
+    if "NODE_RANK" in os.environ:
+        return int(os.environ["NODE_RANK"])
+    return int(os.environ.get("RANK", 0))
+
+
+def get_num_nodes() -> int:
+    """Get total number of nodes from infrastructure environment variables.
+
+    Supports multiple conventions:
+    - NUM_NODES: Explicit node count
+    - NNODES: torchrun convention
+    - WORLD_SIZE/LOCAL_WORLD_SIZE: Compute from GPU count
+
+    Returns:
+        int: Total number of nodes
+    """
+    if "NUM_NODES" in os.environ:
+        return int(os.environ["NUM_NODES"])
+    if "NNODES" in os.environ:
+        return int(os.environ["NNODES"])
+    # Compute from GPU world size
+    world_size = int(os.environ.get("WORLD_SIZE", 1))
+    local_world_size = int(os.environ.get("LOCAL_WORLD_SIZE", 1))
+    return world_size // local_world_size
+
+
+def get_local_world_size() -> int:
+    """Get number of visible GPUs per node.
+
+    Uses torch.cuda.device_count() as the source of truth since it
+    respects CUDA_VISIBLE_DEVICES. Falls back to LOCAL_WORLD_SIZE
+    if no CUDA devices are available (e.g., CPU-only mode).
+
+    Returns:
+        int: Number of visible GPUs per node
+    """
+    if "LOCAL_WORLD_SIZE" in os.environ:
+        return int(os.environ["LOCAL_WORLD_SIZE"])
+    return torch.cuda.device_count()
+
+
+@contextmanager
+def patch_env(**env_vars):
+    """Context manager to temporarily set environment variables.
+
+    Restores original values (or removes if not originally set) on exit.
+    This prevents env var side effects from leaking to other code.
+
+    Args:
+        **env_vars: Environment variables to set temporarily.
+
+    Example:
+        >>> with patch_env(WORLD_SIZE="2", RANK="0"):
+        ...     # env vars are set here
+        ...     pass
+        ... # env vars are restored here
+    """
+    original = {}
+    for key, value in env_vars.items():
+        original[key] = os.environ.get(key)
+        os.environ[key] = str(value)
+
+    try:
+        yield
+    finally:
+        for key, orig_value in original.items():
+            if orig_value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = orig_value
+
+
+# =============================================================================
+# Internal Helpers
+# =============================================================================
+
+
+def _setup_cuda_visible_devices():
+    """Ensure CUDA_VISIBLE_DEVICES is set to all GPUs on the node.
+
+    Returns the original value so it can be restored if needed.
+    """
+    original = os.environ.get("CUDA_VISIBLE_DEVICES")
+    num_gpus = torch.cuda.device_count()
+    if num_gpus > 0:
+        all_gpus = ",".join(str(i) for i in range(num_gpus))
+        os.environ["CUDA_VISIBLE_DEVICES"] = all_gpus
+        logger.info(f"Set CUDA_VISIBLE_DEVICES={all_gpus}")
+    return original
+
+
+def init_ray_with_torch_distributed(timeout_seconds: int = 300):
+    """Initialize Ray cluster using torch.distributed for node coordination.
+
+    This function sets up a Ray cluster where node 0 (dist.get_rank() == 0) starts the head,
+    and other nodes connect to it. It assumes:
+    - torch.distributed is initialized with world_size = num_nodes (one process per node)
+    - dist.get_rank() returns the NODE rank, not GPU rank
+    - Each node has num_gpus_per_node GPUs
+
+    The function:
+    1. Starts Ray head node on node 0
+    2. Broadcasts the Ray address to all other nodes via gloo
+    3. Other nodes join the Ray cluster
+    4. Waits for all GPUs to be available before proceeding
+    """
+    num_gpus_per_node = get_local_world_size()
+    num_nodes = dist.get_world_size()
+    expected_total_gpus = num_nodes * num_gpus_per_node
+
+    logger.info(f"Node {dist.get_rank()}/{num_nodes}: num_gpus_per_node={num_gpus_per_node}, "
+                f"expected_total_gpus={expected_total_gpus}")
+
+    # Start Ray head on node 0
     if dist.get_rank() == 0:
-        # Start Ray Server on master node
-        subprocess.run(["ray", "start", "--head"], check=True)
-        # connect to the ray cluster
+        _setup_cuda_visible_devices()
+
+        ray_start_cmd = [
+            "ray", "start", "--head",
+            f"--num-gpus={num_gpus_per_node}",
+            "--disable-usage-stats",
+        ]
+        logger.info(f"Starting Ray head: {' '.join(ray_start_cmd)}")
+        subprocess.run(ray_start_cmd, check=True)
+
+        # Give Ray a moment to fully initialize
+        time.sleep(3)
+
+        # Connect to the ray cluster
         ray.init("auto")
-        # get existing ray ip and port
-        ctx = ray.get_runtime_context()
-        address = ctx.gcs_address
+
+        # Get Ray address
+        address = ray.get_runtime_context().gcs_address
+        logger.info(f"Ray head started at {address}")
     else:
         address = ""
+
+    # Broadcast Ray address to all nodes via gloo
     address_list = [address]
-    # broadcast address to all other ranks
     dist.broadcast_object_list(address_list, src=0)
-    if dist.get_rank() != 0 and os.environ.get("LOCAL_RANK", None) == "0":
+
+    # Other nodes join the Ray cluster
+    if dist.get_rank() != 0:
         address = address_list[0]
-        logger.info(f"Rank {dist.get_rank()}: connecting to address {address}")
-        subprocess.run(["ray", "start", f"--address={address}"], check=True)
+        logger.info(f"Node {dist.get_rank()}: connecting to Ray at {address}")
+
+        # Ensure all GPUs are visible for Ray
+        _setup_cuda_visible_devices()
+
+        ray_start_cmd = [
+            "ray", "start",
+            f"--address={address}",
+            f"--num-gpus={num_gpus_per_node}",
+            "--disable-usage-stats",
+        ]
+        subprocess.run(ray_start_cmd, check=True)
+        time.sleep(2)
+
     dist.barrier()
+
+    # Wait until all GPUs are available
     if dist.get_rank() == 0:
-        # wait until num of gpus reach world_size
         num_gpus = int(ray.cluster_resources().get("GPU", 0))
         start_time = time.time()
-        while num_gpus < dist.get_world_size():
+        while num_gpus < expected_total_gpus:
             elapsed_time = time.time() - start_time
             if elapsed_time > timeout_seconds:
                 raise RuntimeError(
-                    f"Timeout after {timeout_seconds}s: Failed to start {dist.get_world_size()} GPUs. Only {num_gpus} GPUs available.",
+                    f"Timeout after {timeout_seconds}s: Expected {expected_total_gpus} GPUs but only {num_gpus} available.",
                 )
 
             logger.info(
-                f"Waiting for {dist.get_world_size() - num_gpus} GPUs to be available (elapsed: {elapsed_time:.1f}s, timeout: {timeout_seconds}s)",
+                f"Waiting for GPUs: {num_gpus}/{expected_total_gpus} available (elapsed: {elapsed_time:.1f}s)",
             )
-            num_gpus = int(ray.cluster_resources().get("GPU", 0))
-            # sleep ad-hoc 5s to avoid busy waiting
             time.sleep(5)
+            num_gpus = int(ray.cluster_resources().get("GPU", 0))
 
-        logger.info(f"Total available GPUs: {ray.available_resources()}")
+        logger.info(f"Ray cluster ready with {num_gpus} GPUs. Resources: {ray.available_resources()}")
+
     return address
 
 
@@ -99,96 +235,49 @@ def start_ray_server(timeout_seconds: int = 300):
     """Context manager for Ray server in a torch distributed environment.
 
     This context manager handles the complete lifecycle of a Ray cluster:
-    - Initializes PyTorch distributed process group if not already initialized
+    - Reads infrastructure env vars (NODE_RANK, WORLD_SIZE, LOCAL_WORLD_SIZE, etc.)
+    - Sets up a gloo process group for node coordination
     - Starts the Ray cluster using init_ray_with_torch_distributed()
-    - Provides the Ray address to the context
     - Ensures proper cleanup of Ray and distributed resources
-
-    The context manager ensures that Ray is properly shut down and the distributed
-    process group is destroyed even if an exception occurs.
-
-    Args:
-        timeout_seconds (int): Maximum time to wait for Ray cluster initialization (default: 300)
 
     Yields:
         str: The Ray cluster address (GCS address)
-
-    Example:
-        >>> with start_ray_server() as ray_address:
-        ...     # Use Ray cluster here
-        ...     ray.get(some_remote_function.remote())
-        ... # Ray is automatically shut down here
     """
-    init_torch_dist = False
-    if not dist.is_initialized():
-        dist.init_process_group(backend="gloo")
-        init_torch_dist = True
-    address = init_ray_with_torch_distributed(timeout_seconds=timeout_seconds)
-    try:
-        yield address
-        # NOTE we have to keep all the MCT orchestrator started processes alive with this barrier
-        # until the ray cluster is stopped, otherwise the MCT orchestrator will reclaim the resources
-        # once the processes on a node exit
-        # this may time out too quick for a real world run, if so we might need to reuse the original
-        # SyncActor based approach
-        dist.barrier()
-    finally:
-        if dist.get_rank() == 0:
-            ray.shutdown()
-            subprocess.run(["ray", "stop"], check=True)
-        dist.barrier()
-        if init_torch_dist:
-            dist.destroy_process_group()
+    should_manage_pg = not dist.is_initialized()
 
+    num_nodes = get_num_nodes()
+    node_rank = get_node_rank()
+    master_addr = os.environ.get("MASTER_ADDR", "127.0.0.1")
+    master_port = os.environ.get("MASTER_PORT", "29500")
 
-def get_node_ip():
-    """Get the IP address of the current Ray node.
+    if should_manage_pg:
+        logger.info(f"Setting up node sync: node {node_rank}/{num_nodes}, "
+                    f"master={master_addr}:{master_port}")
 
-    Returns:
-        str: The IP address of the current node, with any brackets removed
+    # We want to create a node level process group (each node is a rank in the process group)
+    # since this allows us to run a command on node rank 0 to start the Ray cluster and then
+    # all other nodes can join the Ray cluster by connecting to the Ray address.
+    with patch_env(
+        WORLD_SIZE=str(num_nodes),
+        RANK=str(node_rank),
+        MASTER_ADDR=master_addr,
+        MASTER_PORT=str(master_port),
+    ):
+        if should_manage_pg:
+            dist.init_process_group(backend="gloo")
 
-    Example:
-        >>> ip = get_node_ip()
-        >>> print(f"Current node IP: {ip}")
-        Current node IP: 192.168.1.100
-    """
-    return ray.util.get_node_ip_address().strip("[]")
+        address = init_ray_with_torch_distributed(timeout_seconds=timeout_seconds)
 
-
-def get_free_port():
-    """Get a free port number that can be used for binding a socket.
-
-    This function creates a temporary socket, binds it to port 0 (which tells the OS
-    to assign any available port), and returns the assigned port number. The socket
-    is automatically closed when the context manager exits.
-
-    NOTE there is a low risk that the port is recollected by the system after the context manager exits
-    and before current process use it
-
-    Returns:
-        int: A free port number that can be used for network services
-
-    Example:
-        >>> port = get_free_port()
-        >>> print(f"Available port: {port}")
-        Available port: 54321
-    """
-    with socket.socket() as sock:
-        sock.bind(("", 0))
-        return sock.getsockname()[1]
-
-
-def is_cuda_visible_devices_set():
-    """Check if CUDA_VISIBLE_DEVICES environment variable is being set by Ray.
-
-    Ray can automatically set the CUDA_VISIBLE_DEVICES environment variable to
-    control which GPUs are visible to processes. This function checks whether
-    this behavior is enabled or disabled.
-
-    Returns:
-        bool: True if Ray is setting CUDA_VISIBLE_DEVICES, False otherwise
-    """
-    return os.environ.get(
-        "RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES",
-        "0",
-    ) == "0"
+        try:
+            yield address
+            # NOTE we have to keep all the MCT orchestrator started processes alive with this barrier
+            # until the ray cluster is stopped, otherwise the MCT orchestrator will reclaim the resources
+            # once the processes on a node exit
+            dist.barrier()
+        finally:
+            if dist.get_rank() == 0:
+                ray.shutdown()
+                subprocess.run(["ray", "stop", "--force"], check=True)
+            dist.barrier()
+            if should_manage_pg:
+                dist.destroy_process_group()

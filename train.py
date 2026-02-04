@@ -1,5 +1,3 @@
-import os
-
 import ray
 
 from slime.ray.placement_group import create_placement_groups, create_rollout_manager, create_training_models
@@ -101,24 +99,17 @@ def main():
     args = parse_args()
 
     if getattr(args, "use_rayless_init", False):
-        # Rayless/SPMD mode: initialize Ray via torch.distributed
-        from slime.utils.ray_utils import start_ray_server
+        # Using Rayless/SPMD mode to initialize Ray via torch.distributed
+        from slime.utils.ray_utils import get_node_rank, start_ray_server
 
-        rank = int(os.environ.get("RANK", 0))
+        node_rank = get_node_rank()
         timeout = getattr(args, "ray_init_timeout", 300)
-
         with start_ray_server(timeout_seconds=timeout):
-            if rank == 0:
-                # Only rank 0 orchestrates training
+            # Only node 0 orchestrates training; after start_ray_server,
+            # all other nodes are connected to node_rank = 0
+            if node_rank == 0:
                 train(args)
-            else:
-                # Non-rank-0 processes keep alive as Ray workers
-                # They participate via Ray remote calls
-                import torch.distributed as dist
-
-                dist.barrier()  # Wait until rank 0 is done
     else:
-        # Original Ray CLI mode (backward compatible)
         train(args)
 
 
