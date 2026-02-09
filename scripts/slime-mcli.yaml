@@ -1,0 +1,178 @@
+# mcli run -f scripts/slime-mcli.yaml
+name: slime-deepseek-r1-8b-grpo-math-fa3-10iters
+image: slimerl/slime:latest
+
+scheduling:
+  priority: high
+  resumable: false
+  preemptible: false
+  max_duration: 24
+
+compute:
+  gpus: 16
+  cluster: r5z2p1
+
+# Get the latest changes from the rithwik-db/slime repository + ricky/add-async branch
+# The environment variables should already be set by mcli
+command: |-
+  cd /root/slime
+  git remote add rithwik https://github.com/rithwik-db/slime || true
+  git fetch rithwik ricky/add-async && git checkout FETCH_HEAD
+  pip install -e . --no-deps
+  pip install mlflow-skinny pydantic databricks-sdk latex2sympy2_extended math-verify
+  hf download deepseek-ai/DeepSeek-R1-Distill-Llama-8B --local-dir /root/DeepSeek-R1-Distill-Llama-8B
+  python /root/slime/train_async.py \
+    --use-rayless-init \
+    --train-yaml /mnt/config/parameters.yaml
+
+parameters:
+  data_download:
+    enabled: true
+    downloads:
+      - source: "dbfs:/Volumes/kie/rithwikediga/dpsk_8b_open_r1_48k/with_cot/slime.jsonl"
+        destination: "/root/dpsk_8b_open_r1_48k/slime.jsonl"
+
+  # =============================================================================
+  # Cluster Configuration
+  # =============================================================================
+  cluster:
+    actor_num_nodes: 1
+    actor_num_gpus_per_node: 8
+    rollout_num_gpus: 8
+    rollout_num_gpus_per_engine: 1
+    colocate: false
+
+  # =============================================================================
+  # Training Configuration (FSDP2)
+  # =============================================================================
+  train:
+    train_backend: fsdp
+    gradient_checkpointing: true
+    attn_implementation: flash_attention_2
+    train_env_vars:
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+
+  # =============================================================================
+  # Rollout (Inference) Configuration
+  # =============================================================================
+  rollout:
+    hf_checkpoint: /root/DeepSeek-R1-Distill-Llama-8B/
+    update_weights_interval: 1
+    rollout_temperature: 1.0
+    rollout_top_p: 1.0
+    rollout_max_response_len: 8192
+    rollout_max_context_len: 10240
+    rollout_shuffle: false  # No shuffle
+    rollout_seed: 17
+    update_weight_buffer_size: 536870912  # 512MB
+    partial_rollout: true  # Enable partial rollouts
+
+  # =============================================================================
+  # Data Configuration
+  # =============================================================================
+  data:
+    prompt_data: /root/dpsk_8b_open_r1_48k/slime.jsonl
+    input_key: prompt
+    label_key: label
+    apply_chat_template: true
+
+    # Batch configuration for 512 samples per iteration
+    # 64 prompts x 8 generations = 512 samples
+    # 512 samples / 64 global_batch_size = 8 steps per iteration
+    rollout_batch_size: 64
+    n_samples_per_prompt: 8
+    global_batch_size: 64
+    num_steps_per_rollout: 8
+
+    # No dynamic batching (no packing)
+    balance_data: false
+    use_dynamic_batch_size: false
+
+    # Training iterations
+    num_rollout: 20
+
+  # =============================================================================
+  # Algorithm Configuration (Base GRPO)
+  # =============================================================================
+  algorithm:
+    # Checkpoints
+    ref_load: /root/DeepSeek-R1-Distill-Llama-8B/
+    load: /root/DeepSeek-R1-Distill-Llama-8B/
+    save: /root/DeepSeek-R1-Distill-Llama-8B-checkpoints/
+    save_interval: 100
+
+    # Base GRPO settings
+    advantage_estimator: grpo
+    grpo_std_normalization: false
+    rewards_normalization: true
+    normalize_advantages: true  # Standard advantage normalization
+
+    # KL divergence - calculate K3 but don't use in loss
+    use_kl_loss: true  # Enable KL calculation
+    kl_loss_coef: 0.0  # But don't add to loss (weight=0)
+    kl_loss_type: k3   # K3 type: exp(log_ratio) - 1 - log_ratio
+
+    # PPO clipping
+    eps_clip: 0.2
+    eps_clip_high: 0.2  # Same as eps_clip for base GRPO
+
+    # Token-level importance weighting (vanilla TIS)
+    use_tis: true
+    tis_clip: 2.0      # Upper bound for IS ratio clipping
+    tis_clip_low: 0.0  # Lower bound for IS ratio clipping
+
+    # Optimizer: Adam
+    optimizer: adam
+    lr: 1e-6
+    adam_beta1: 0.9
+    adam_beta2: 0.95
+    weight_decay: 0.0
+
+    # Scheduler: constant (no warmup)
+    lr_decay_style: constant
+
+    # Gradient clipping
+    clip_grad: 1.0
+    seed: 17
+
+  # =============================================================================
+  # Fault Tolerance
+  # =============================================================================
+  fault_tolerance:
+    use_fault_tolerance: true
+
+  # =============================================================================
+  # Debug Configuration
+  # =============================================================================
+  debug:
+    dump_details: /root/logs/DeepSeek-R1-Distill-Llama-8B-fsdp/dump_details
+
+  # =============================================================================
+  # Evaluation - DISABLED
+  # =============================================================================
+  # No evaluation configuration (user wants no evals)
+
+  # =============================================================================
+  # Reward Model
+  # =============================================================================
+  reward:
+    rm_type: math_verifier
+
+  # =============================================================================
+  # MLflow Logging
+  # =============================================================================
+  mlflow:
+    use_mlflow: true
+    mlflow_tracking_uri: databricks
+    mlflow_experiment_name: /Users/rithwik.ediga@databricks.com/slime-comparison
+    mlflow_run_name: slime-multi-node-fa2-20iters
+
+  # =============================================================================
+  # SGLang Configuration
+  # =============================================================================
+  sglang:
+    sglang_mem_fraction_static: 0.75
+    sglang_decode_log_interval: 1000
+    sglang_chunked_prefill_size: 4096
+    sglang_attention_backend: flashinfer
+    # Prefix caching (RadixAttention) is enabled by default
