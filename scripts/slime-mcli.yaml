@@ -1,5 +1,5 @@
 # mcli run -f scripts/slime-mcli.yaml
-name: slime-deepseek-r1-8b-grpo-math-fa3-10iters
+name: slime-deepseek-r1-8b-grpo-math-fa2-75iters
 image: slimerl/slime:latest
 
 scheduling:
@@ -12,15 +12,32 @@ compute:
   gpus: 16
   cluster: r5z2p1
 
-# Get the latest changes from the rithwik-db/slime repository + ricky/add-async branch
-# The environment variables should already be set by mcli
+env_variables:
+  UNIVERSE_BRANCH: master
+  SLIME_BRANCH: ricky/add-minieval
 command: |-
+  # Install minieval
+  git clone --filter=blob:none --depth 1 --branch $UNIVERSE_BRANCH --single-branch --sparse --no-checkout org-145372899@github.com:databricks-eng/universe-dev.git /workspace/universe
+  cd /workspace/universe
+  git sparse-checkout set research
+  git checkout
+  research/sync/scripts/ensure_sparse_checkout.sh
+  cd /workspace/universe/research/minieval
+  pip install -e .
+
+  # Install slime
   cd /root/slime
   git remote add rithwik https://github.com/rithwik-db/slime || true
-  git fetch rithwik ricky/add-async && git checkout FETCH_HEAD
+  git fetch rithwik $SLIME_BRANCH && git checkout FETCH_HEAD
   pip install -e . --no-deps
+
+  # Install extra dependencies
   pip install mlflow-skinny pydantic databricks-sdk latex2sympy2_extended math-verify
+
+  # Download the model
   hf download deepseek-ai/DeepSeek-R1-Distill-Llama-8B --local-dir /root/DeepSeek-R1-Distill-Llama-8B
+
+  # Train the model
   python /root/slime/train_async.py \
     --use-rayless-init \
     --train-yaml /mnt/config/parameters.yaml
@@ -66,6 +83,7 @@ parameters:
     rollout_seed: 17
     update_weight_buffer_size: 536870912  # 512MB
     partial_rollout: true  # Enable partial rollouts
+    custom_eval_rollout_log_function_path: examples.minieval_integration.log_minieval_results.log_eval_rollout_data
 
   # =============================================================================
   # Data Configuration
@@ -84,12 +102,12 @@ parameters:
     global_batch_size: 64
     num_steps_per_rollout: 8
 
-    # No dynamic batching (no packing)
+    # No dynamic batching
     balance_data: false
     use_dynamic_batch_size: false
 
     # Training iterations
-    num_rollout: 20
+    num_rollout: 75
 
   # =============================================================================
   # Algorithm Configuration (Base GRPO)
@@ -148,9 +166,24 @@ parameters:
     dump_details: /root/logs/DeepSeek-R1-Distill-Llama-8B-fsdp/dump_details
 
   # =============================================================================
-  # Evaluation - DISABLED
+  # Evaluation (via minieval)
   # =============================================================================
-  # No evaluation configuration (user wants no evals)
+  evaluation:
+    eval_function_path: examples.minieval_integration.eval_with_minieval.generate_rollout
+    eval_interval: 3
+    # Dummy dataset to satisfy validation (not used by minieval eval function)
+    datasets:
+      - name: placeholder
+        path: /dev/null
+
+  minieval:
+    model:
+      name: openai
+    evals:
+    - name: gsm8k
+    - name: math_500
+    - name: math_hard
+    - name: math_competition
 
   # =============================================================================
   # Reward Model
