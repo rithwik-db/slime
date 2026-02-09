@@ -30,7 +30,6 @@ train:
 # Rollout (Inference) Configuration
 # =============================================================================
 rollout:
-  # hf_checkpoint: /root/Qwen3-4B/
   hf_checkpoint: /root/DeepSeek-R1-Distill-Llama-8B/
   update_weights_interval: 1
   rollout_temperature: 1.0
@@ -41,6 +40,7 @@ rollout:
   rollout_seed: 17
   update_weight_buffer_size: 536870912  # 512MB
   partial_rollout: true  # Enable partial rollouts
+  custom_eval_rollout_log_function_path: examples.minieval_integration.log_minieval_results.log_eval_rollout_data
   # Prefix caching is enabled by default in SGLang (RadixAttention)
   # No presence/frequency penalty by default (0)
 
@@ -56,10 +56,10 @@ data:
   # Batch configuration for 512 samples per iteration
   # 64 prompts x 8 generations = 512 samples
   # 512 samples / 64 global_batch_size = 8 steps per iteration
-  rollout_batch_size: 64
+  rollout_batch_size: 2
   n_samples_per_prompt: 8
-  global_batch_size: 64
-  num_steps_per_rollout: 8
+  global_batch_size: 16
+  num_steps_per_rollout: 1
 
   # No dynamic batching (no packing)
   balance_data: false
@@ -74,9 +74,6 @@ data:
 # =============================================================================
 algorithm:
   # Checkpoints
-  # ref_load: /root/Qwen3-4B/
-  # load: /root/Qwen3-4B/
-  # save: /root/Qwen3-4B-checkpoints/
   ref_load: /root/DeepSeek-R1-Distill-Llama-8B/
   load: /root/DeepSeek-R1-Distill-Llama-8B/
   save: /root/DeepSeek-R1-Distill-Llama-8B-checkpoints/
@@ -131,9 +128,22 @@ debug:
   dump_details: /root/logs/DeepSeek-R1-Distill-Llama-8B-fsdp/dump_details
 
 # =============================================================================
-# Evaluation - DISABLED
+# Evaluation (via minieval)
 # =============================================================================
-# No evaluation configuration (user wants no evals)
+evaluation:
+  eval_function_path: examples.minieval_integration.eval_with_minieval.generate_rollout
+  eval_interval: 1
+
+  # Dummy dataset to satisfy validation (not used by minieval eval function)
+  datasets:
+    - name: placeholder
+      path: /dev/null
+
+minieval:
+  model:
+    name: openai
+  evals:
+  - name: gsm8k
 
 # =============================================================================
 # Reward Model
@@ -148,7 +158,7 @@ mlflow:
   use_mlflow: true
   mlflow_tracking_uri: databricks
   mlflow_experiment_name: /Users/rithwik.ediga@databricks.com/slime-comparison
-  mlflow_run_name: slime-multi-node
+  mlflow_run_name: slime-local
 
 # =============================================================================
 # SGLang Configuration

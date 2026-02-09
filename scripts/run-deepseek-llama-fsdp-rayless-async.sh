@@ -12,8 +12,13 @@ sleep 3
 
 set -ex
 export PYTHONUNBUFFERED=1
+export NODE_RANK=${NODE_RANK:-0}
+export WORLD_SIZE=${WORLD_SIZE:-4}
+export LOCAL_WORLD_SIZE=${LOCAL_WORLD_SIZE:-4}
+export MASTER_ADDR=${MASTER_ADDR:-127.0.0.1}
+export MASTER_PORT=${MASTER_PORT:-29504}
 
-echo "Node ${NODE_RANK}: Starting ASYNC rayless training"
+echo "Node ${NODE_RANK}: Starting async rayless training"
 echo "Infrastructure: WORLD_SIZE=${WORLD_SIZE}, LOCAL_WORLD_SIZE=${LOCAL_WORLD_SIZE}"
 echo "Master: ${MASTER_ADDR}:${MASTER_PORT}"
 
