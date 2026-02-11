@@ -19,6 +19,7 @@ import socket
 import subprocess
 import time
 from contextlib import contextmanager
+from datetime import timedelta
 
 import ray
 import torch
@@ -259,7 +260,7 @@ def start_ray_server(timeout_seconds: int = 300):
         MASTER_PORT=str(master_port),
     ):
         if should_manage_pg:
-            dist.init_process_group(backend="gloo")
+            dist.init_process_group(backend="gloo", timeout=timedelta(hours=24))
 
         address = init_ray_with_torch_distributed(timeout_seconds=timeout_seconds)
 

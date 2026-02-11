@@ -205,10 +205,12 @@ def init_http_client(args):
         return
 
     _client_concurrency = args.sglang_server_concurrency * args.rollout_num_gpus // args.rollout_num_gpus_per_engine
+    # Use configurable timeout (default 10 minutes) to prevent hung requests from blocking indefinitely
+    http_timeout = getattr(args, "http_timeout", 600.0)
     if _http_client is None:
         _http_client = httpx.AsyncClient(
             limits=httpx.Limits(max_connections=_client_concurrency),
-            timeout=httpx.Timeout(None),
+            timeout=httpx.Timeout(http_timeout),
         )
 
     # Optionally initialize distributed POST via Ray without changing interfaces
@@ -236,13 +238,15 @@ def _init_ray_distributed_post(args):
         raise RuntimeError("No alive Ray nodes to place HTTP POST actors.")
 
     # Define the async actor
+    http_timeout = getattr(args, "http_timeout", 600.0)
+
     @ray.remote
     class _HttpPosterActor:
-        def __init__(self, concurrency: int):
+        def __init__(self, concurrency: int, timeout: float):
             # Lazy creation to this actor's event loop
             self._client = httpx.AsyncClient(
                 limits=httpx.Limits(max_connections=max(1, concurrency)),
-                timeout=httpx.Timeout(None),
+                timeout=httpx.Timeout(timeout),
             )
 
         async def do_post(self, url, payload, max_retries=60):
@@ -264,7 +268,7 @@ def _init_ray_distributed_post(args):
                 max_concurrency=per_actor_conc,
                 # Use tiny CPU to schedule
                 num_cpus=0.001,
-            ).remote(per_actor_conc)
+            ).remote(per_actor_conc, http_timeout)
             created.append(actor)
 
     _post_actors = created

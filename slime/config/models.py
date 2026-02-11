@@ -526,6 +526,7 @@ class NetworkConfig(SlimeBaseConfig):
 
     http_proxy: str | None = Field(default=None, description="HTTP proxy URL")
     use_distributed_post: bool = Field(default=False, description="Use distributed POST")
+    http_timeout: float = Field(default=600.0, description="HTTP request timeout in seconds (default 10 minutes)")
 
 
 # =============================================================================
